@@ -41,11 +41,11 @@ const std::string SYNC_INTEREST_TAG2 = "send-sync-interest2";
 const std::string LOCAL_STATE_CHANGE_DELAYED_TAG = "local-state-changed";
 
 using namespace boost;
-using namespace Ccnx;
+using namespace ndn;
 
-SyncCore::SyncCore(SyncLogPtr syncLog, const Name &userName, const Name &localPrefix, const Name &syncPrefix,
-                   const StateMsgCallback &callback, CcnxWrapperPtr ccnx, double syncInterestInterval/*= -1.0*/)
-  : m_ccnx (ccnx)
+SyncCore::SyncCore(SyncLogPtr syncLog, const ndn::Name &userName, const ndn::Name &localPrefix, const ndn::Name &syncPrefix,
+                   const StateMsgCallback &callback, ndn::NdnFace face, double syncInterestInterval/*= -1.0*/)
+  : m_ndn (face)
   , m_log(syncLog)
   , m_scheduler(new Scheduler ())
   , m_stateMsgCallback(callback)
@@ -55,6 +55,8 @@ SyncCore::SyncCore(SyncLogPtr syncLog, const Name &userName, const Name &localPr
 {
   m_rootHash = m_log->RememberStateInStateLog();
 
+  //TODO add third argument, what is called if the prefix registration fails?
+  m_ndn.setInterestFilter(m_syncPrefix, boost::bind(&SyncCore::handleInterest, this, _1), );
   m_ccnx->setInterestFilter(m_syncPrefix, boost::bind(&SyncCore::handleInterest, this, _1));
   // m_log->initYP(m_yp);
   m_log->UpdateLocalLocator (localPrefix);
@@ -91,6 +93,12 @@ SyncCore::localStateChanged()
   // reply sync Interest with oldHash as last component
   Name syncName = Name (m_syncPrefix)(oldHash->GetHash(), oldHash->GetHashBytes());
   BytesPtr syncData = serializeGZipMsg (*msg);
+
+  ndn::Data data;
+  data.setName(syncName);
+  data.setFreshnessPeriod(FRESHNESS);
+  data.setContent(reinterpret_cast<const uint8_t*>(*syncData), sizeof(*syncData)); //TODO does the sizeof() work here?
+  m_ndn.put(data);
 
   m_ccnx->publishData(syncName, *syncData, FRESHNESS);
   _LOG_DEBUG ("[" << m_log->GetLocalName () << "] localStateChanged ");
@@ -147,6 +155,11 @@ SyncCore::handleRecoverInterest(const Name &name)
     SyncStateMsgPtr msg = m_log->FindStateDifferences(*(Hash::Origin), *m_rootHash);
 
     BytesPtr syncData = serializeGZipMsg (*msg);
+    Ndncxx::Data data;
+    data.setName(syncName);
+    data.setFreshnessPeriod(FRESHNESS);
+    data.setContent(reinterpret_cast<const uint8_t*>(*syncData), sizeof(*syncData)); //TODO does the sizeof() work here?
+
     m_ccnx->publishData(name, *syncData, FRESHNESS);
     _LOG_TRACE ("[" << m_log->GetLocalName () << "] publishes " << hash.shortHash ());
     // _LOG_TRACE (msg);
@@ -177,6 +190,12 @@ SyncCore::handleSyncInterest(const Name &name)
     SyncStateMsgPtr msg = m_log->FindStateDifferences(*hash, *m_rootHash);
 
     BytesPtr syncData = serializeGZipMsg (*msg);
+
+    Ndncxx::Data data;
+    data.setName(syncName);
+    data.setFreshnessPeriod(FRESHNESS);
+    data.setContent(reinterpret_cast<const uint8_t*>(*syncData), sizeof(*syncData)); //TODO does the sizeof() work here?
+
     m_ccnx->publishData(name, *syncData, FRESHNESS);
     _LOG_TRACE (m_log->GetLocalName () << " publishes: " << hash->shortHash ());
     _LOG_TRACE (msg);
@@ -210,7 +229,7 @@ SyncCore::handleRecoverInterestTimeout(const Name &name, const Closure &closure,
 }
 
 void
-SyncCore::handleRecoverData(const Name &name, PcoPtr content)
+SyncCore::handleRecoverData(const Name &name, shared_ptr<ndn::Data> content)
 {
   _LOG_DEBUG ("[" << m_log->GetLocalName () << "] <<<<< RECOVER DATA with name: " << name);
   //cout << "handle recover data" << end;
@@ -231,7 +250,7 @@ SyncCore::handleRecoverData(const Name &name, PcoPtr content)
 }
 
 void
-SyncCore::handleSyncData(const Name &name, PcoPtr content)
+SyncCore::handleSyncData(const Name &name, shared_ptr<ndn::Data> content)
 {
   _LOG_DEBUG ("[" << m_log->GetLocalName () << "] <<<<< SYNC DATA with name: " << name);
 
@@ -322,6 +341,13 @@ SyncCore::sendSyncInterest()
   {
     selectors.interestLifetime(m_syncInterestInterval);
   }
+
+
+  m_ndn.expressInterest(syncInterest,
+		  Closure (boost::bind(&SyncCore::handleSyncData, this, _1, _2),
+		                                    boost::bind(&SyncCore::handleSyncInterestTimeout, this, _1, _2, _3)),
+		                            selectors); //TODO Closure
+
   m_ccnx->sendInterest(syncInterest,
                          Closure (boost::bind(&SyncCore::handleSyncData, this, _1, _2),
                                   boost::bind(&SyncCore::handleSyncInterestTimeout, this, _1, _2, _3)),
@@ -346,6 +372,11 @@ SyncCore::recover(HashPtr hash)
     Name recoverInterest = Name (m_syncPrefix)(RECOVER)(bytes);
 
     _LOG_DEBUG ("[" << m_log->GetLocalName () << "] >>> RECOVER Interests for " << hash->shortHash ());
+
+    m_ndn.expressInterest(recoverInterest,
+            Closure (boost::bind(&SyncCore::handleRecoverData, this, _1, _2),
+                     boost::bind(&SyncCore::handleRecoverInterestTimeout, this, _1, _2, _3)));
+
 
     m_ccnx->sendInterest(recoverInterest,
                          Closure (boost::bind(&SyncCore::handleRecoverData, this, _1, _2),

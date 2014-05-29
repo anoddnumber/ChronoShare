@@ -23,8 +23,7 @@
 #define SYNC_CORE_H
 
 #include "sync-log.h"
-#include "ccnx-wrapper.h"
-#include "ccnx-selectors.h"
+#include "face.hpp"
 #include "scheduler.h"
 #include "task.h"
 
@@ -42,11 +41,11 @@ public:
 
 public:
   SyncCore(SyncLogPtr syncLog
-           , const Ccnx::Name &userName
-           , const Ccnx::Name &localPrefix      // routable name used by the local user
-           , const Ccnx::Name &syncPrefix       // the prefix for the sync collection
+           , const ndn::Name &userName
+           , const ndn::Name &localPrefix      // routable name used by the local user
+           , const ndn::Name &syncPrefix       // the prefix for the sync collection
            , const StateMsgCallback &callback   // callback when state change is detected
-           , Ccnx::CcnxWrapperPtr ccnx
+           , ndn::Face face
            , double syncInterestInterval = -1.0);
   ~SyncCore();
 
@@ -71,26 +70,26 @@ public:
   root() const { return m_rootHash; }
 
   sqlite3_int64
-  seq (const Ccnx::Name &name);
+  seq (const ndn::Name &name);
 
 private:
   void
-  handleInterest(const Ccnx::Name &name);
+  handleInterest(const ndn::Name &name);
 
   void
-  handleSyncData(const Ccnx::Name &name, Ccnx::PcoPtr content);
+  handleSyncData(const ndn::Name &name, shared_ptr<ndn::Data> content);
 
   void
-  handleRecoverData(const Ccnx::Name &name, Ccnx::PcoPtr content);
+  handleRecoverData(const ndn::Name &name, shared_ptr<ndn::Data> content);
 
   void
-  handleSyncInterestTimeout(const Ccnx::Name &name, const Ccnx::Closure &closure, Ccnx::Selectors selectors);
+  handleSyncInterestTimeout(const ndn::Name &name, const Ccnx::Closure &closure, Ccnx::Selectors selectors);
 
   void
-  handleRecoverInterestTimeout(const Ccnx::Name &name, const Ccnx::Closure &closure, Ccnx::Selectors selectors);
+  handleRecoverInterestTimeout(const ndn::Name &name, const Ccnx::Closure &closure, Ccnx::Selectors selectors);
 
   void
-  deregister(const Ccnx::Name &name);
+  deregister(const ndn::Name &name);
 
   void
   recover(HashPtr hash);
@@ -100,16 +99,17 @@ private:
   sendSyncInterest();
 
   void
-  handleSyncInterest(const Ccnx::Name &name);
+  handleSyncInterest(const ndn::Name &name);
 
   void
-  handleRecoverInterest(const Ccnx::Name &name);
+  handleRecoverInterest(const ndn::Name &name);
 
   void
   handleStateData(const Ccnx::Bytes &content);
 
 private:
   Ccnx::CcnxWrapperPtr m_ccnx;
+  Ndn::Face m_ndn;
 
   SyncLogPtr m_log;
   SchedulerPtr m_scheduler;

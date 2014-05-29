@@ -31,17 +31,17 @@
 
 INIT_LOGGER ("StateServer");
 
-using namespace Ccnx;
+using namespace ndn;
 using namespace std;
 using namespace boost;
 
-StateServer::StateServer(CcnxWrapperPtr ccnx, ActionLogPtr actionLog,
+StateServer::StateServer(ndn::Face face, ActionLogPtr actionLog,
                          const boost::filesystem::path &rootDir,
-                         const Ccnx::Name &userName, const std::string &sharedFolderName,
+                         const ndn::Name &userName, const std::string &sharedFolderName,
                          const std::string &appName,
                          ObjectManager &objectManager,
                          int freshness/* = -1*/)
-  : m_ccnx(ccnx)
+  : m_ndn(face)
   , m_actionLog(actionLog)
   , m_objectManager (objectManager)
   , m_rootDir(rootDir)
@@ -77,10 +77,16 @@ StateServer::registerPrefixes ()
   // currently supporting limited number of command.
   // will be extended to support all planned commands later
 
+  //TODO
   // <PREFIX_INFO>/"actions"/"all"/<segment>  get list of all actions
   m_ccnx->setInterestFilter (Name (m_PREFIX_INFO)("actions")("folder"), bind(&StateServer::info_actions_folder, this, _1));
   m_ccnx->setInterestFilter (Name (m_PREFIX_INFO)("actions")("file"),   bind(&StateServer::info_actions_file, this, _1));
 
+  //TODO: m_ndn.setInterestFilter (Name (m_PREFIX_INFO)("actions")("folder"), bind(&StateServer::info_actions_folder, this, _1));
+  //TODO: m_ndn.setInterestFilter (Name (m_PREFIX_INFO)("actions")("file"),   bind(&StateServer::info_actions_file, this, _1));
+
+
+  //TODO below
   // <PREFIX_INFO>/"filestate"/"all"/<segment>
   m_ccnx->setInterestFilter (Name (m_PREFIX_INFO)("files")("folder"), bind(&StateServer::info_files_folder, this, _1));
 
@@ -95,11 +101,14 @@ StateServer::deregisterPrefixes ()
   m_ccnx->clearInterestFilter (Name (m_PREFIX_INFO)("actions")("file"));
   m_ccnx->clearInterestFilter (Name (m_PREFIX_INFO)("files")("folder"));
   m_ccnx->clearInterestFilter (Name (m_PREFIX_CMD) ("restore")("file"));
+
+  //TODO: below
+  //m_ndn.setInterestFilter (....) ???
 }
 
 void
 StateServer::formatActionJson (json_spirit::Array &actions,
-                               const Ccnx::Name &name, sqlite3_int64 seq_no, const ActionItem &action)
+                               const ndn::Name &name, sqlite3_int64 seq_no, const ActionItem &action)
 {
 /*
  *      {
@@ -161,7 +170,7 @@ StateServer::formatActionJson (json_spirit::Array &actions,
   if (action.has_parent_device_name ())
     {
       Object parentId;
-      Ccnx::Name parent_device_name (action.parent_device_name ().c_str (), action.parent_device_name ().size ());
+      ndn::Name parent_device_name (action.parent_device_name ().c_str (), action.parent_device_name ().size ());
       id.push_back (Pair ("userName", boost::lexical_cast<string> (parent_device_name)));
       id.push_back (Pair ("seqNo",    action.parent_seq_no ()));
 
@@ -201,7 +210,7 @@ StateServer::info_actions_file (const Name &interest)
 
 
 void
-StateServer::info_actions_fileOrFolder_Execute (const Ccnx::Name &interest, bool isFolder/* = true*/)
+StateServer::info_actions_fileOrFolder_Execute (const ndn::Name &interest, bool isFolder/* = true*/)
 {
   // <PREFIX_INFO>/"actions"/"folder|file"/<folder|file>/<offset>  get list of all actions
 
@@ -256,12 +265,17 @@ StateServer::info_actions_fileOrFolder_Execute (const Ccnx::Name &interest, bool
 
       ostringstream os;
       write_stream (Value (json), os, pretty_print | raw_utf8);
-      m_ccnx->publishData (interest, os.str (), 1);
+
+      ndn::Data data;
+      data.setName(interest);
+      data.setFreshnessPeriod(1);
+      data.setContent(reinterpret_cast<const uint8_t*>(os.str ()), sizeof(os.str ())); //TODO does the sizeof() work here?
+      m_ndn.put(data);
     }
-  catch (Ccnx::NameException &ne)
+  catch (Ccnx::NameException &ne) //TODO
     {
       // ignore any unexpected interests and errors
-      _LOG_ERROR (*boost::get_error_info<Ccnx::error_info_str>(ne));
+      _LOG_ERROR (*boost::get_error_info<Ccnx::error_info_str>(ne)); //TODO
     }
 }
 
@@ -298,7 +312,7 @@ StateServer::formatFilestateJson (json_spirit::Array &files, const FileItem &fil
   json.push_back (Pair ("version",   file.version ()));
   {
     Object owner;
-    Ccnx::Name device_name (file.device_name ().c_str (), file.device_name ().size ());
+    ndn::Name device_name (file.device_name ().c_str (), file.device_name ().size ());
     owner.push_back (Pair ("userName", boost::lexical_cast<string> (device_name)));
     owner.push_back (Pair ("seqNo",    file.seq_no ()));
 
@@ -323,7 +337,7 @@ void debugFileState (const FileItem &file)
 }
 
 void
-StateServer::info_files_folder (const Ccnx::Name &interest)
+StateServer::info_files_folder (const ndn::Name &interest)
 {
   if (interest.size () - m_PREFIX_INFO.size () != 3 &&
       interest.size () - m_PREFIX_INFO.size () != 4)
@@ -338,7 +352,7 @@ StateServer::info_files_folder (const Ccnx::Name &interest)
 
 
 void
-StateServer::info_files_folder_Execute (const Ccnx::Name &interest)
+StateServer::info_files_folder_Execute (const ndn::Name &interest)
 {
   // <PREFIX_INFO>/"filestate"/"folder"/<one-component-relative-folder-name>/<offset>
   try
@@ -385,18 +399,23 @@ StateServer::info_files_folder_Execute (const Ccnx::Name &interest)
 
       ostringstream os;
       write_stream (Value (json), os, pretty_print | raw_utf8);
-      m_ccnx->publishData (interest, os.str (), 1);
+
+      ndn::Data data;
+      data.setName(interest);
+      data.setFreshnessPeriod(1);
+      data.setContent(reinterpret_cast<const uint8_t*>(os.str ()), sizeof(os.str ())); //TODO does the sizeof() work here?
+      m_ndn.put(data);
     }
-  catch (Ccnx::NameException &ne)
+  catch (Ccnx::NameException &ne) //TODO
     {
       // ignore any unexpected interests and errors
-      _LOG_ERROR (*boost::get_error_info<Ccnx::error_info_str>(ne));
+      _LOG_ERROR (*boost::get_error_info<Ccnx::error_info_str>(ne)); //TODO
     }
 }
 
 
 void
-StateServer::cmd_restore_file (const Ccnx::Name &interest)
+StateServer::cmd_restore_file (const ndn::Name &interest)
 {
   if (interest.size () - m_PREFIX_CMD.size () != 4 &&
       interest.size () - m_PREFIX_CMD.size () != 5)
@@ -410,7 +429,7 @@ StateServer::cmd_restore_file (const Ccnx::Name &interest)
 }
 
 void
-StateServer::cmd_restore_file_Execute (const Ccnx::Name &interest)
+StateServer::cmd_restore_file_Execute (const ndn::Name &interest)
 {
   // <PREFIX_CMD>/"restore"/"file"/<one-component-relative-file-name>/<version>/<file-hash>
 
@@ -446,7 +465,13 @@ StateServer::cmd_restore_file_Execute (const Ccnx::Name &interest)
 
       if (!file)
         {
-          m_ccnx->publishData (interest, "FAIL: Requested file is not found", 1);
+    	  //TODO correct?
+          ndn::Data data;
+          data.setName(interest);
+          data.setFreshnessPeriod(1);
+          string msg = "FAIL: Requested file is not found";
+          data.setContent(reinterpret_cast<const uint8_t*>(msg), strlen(msg));
+          m_ndn.put(data);
           return;
         }
 
@@ -468,14 +493,26 @@ StateServer::cmd_restore_file_Execute (const Ccnx::Name &interest)
 #endif
               *Hash::FromFileContent (filePath) == hash)
             {
-              m_ccnx->publishData (interest, "OK: File already exists", 1);
+        	  ndn::Data data;
+              data.setName(interest);
+              data.setFreshnessPeriod(1);
+              string msg = "OK: File already exists";
+              data.setContent(reinterpret_cast<const uint8_t*>(msg), strlen(msg));
+              m_ndn.put(data);
+
               _LOG_DEBUG ("Asking to assemble a file, but file already exists on a filesystem");
               return;
             }
         }
       catch (filesystem::filesystem_error &error)
         {
-          m_ccnx->publishData (interest, "FAIL: File operation failed", 1);
+          ndn::Data data;
+          data.setName(interest);
+          data.setFreshnessPeriod(1);
+          string msg = "FAIL: File operation failed";
+          data.setContent(reinterpret_cast<const uint8_t*>(msg), strlen(msg));
+          m_ndn.put(data);
+
           _LOG_ERROR ("File operations failed on [" << filePath << "] (ignoring)");
         }
 
@@ -486,16 +523,26 @@ StateServer::cmd_restore_file_Execute (const Ccnx::Name &interest)
 #if BOOST_VERSION >= 104900
           permissions (filePath, static_cast<filesystem::perms> (file->mode ()));
 #endif
-          m_ccnx->publishData (interest, "OK", 1);
+          ndn::Data data;
+          data.setName(interest);
+          data.setFreshnessPeriod(1);
+          string msg = "OK";
+          data.setContent(reinterpret_cast<const uint8_t*>(msg), strlen(msg));
+          m_ndn.put(data);
         }
       else
         {
-          m_ccnx->publishData (interest, "FAIL: Unknown error while restoring file", 1);
+          ndn::Data data;
+          data.setName(interest);
+          data.setFreshnessPeriod(1);
+          string msg = "FAIL: Unknown error while restoring file";
+          data.setContent(reinterpret_cast<const uint8_t*>(msg), strlen(msg));
+          m_ndn.put(data);
         }
     }
-  catch (Ccnx::NameException &ne)
+  catch (Ccnx::NameException &ne) //TODO
     {
       // ignore any unexpected interests and errors
-      _LOG_ERROR(*boost::get_error_info<Ccnx::error_info_str>(ne));
+      _LOG_ERROR(*boost::get_error_info<Ccnx::error_info_str>(ne)); //TODO
     }
 }

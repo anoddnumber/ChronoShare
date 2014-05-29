@@ -21,7 +21,6 @@
 
 #include "fetcher.h"
 #include "fetch-manager.h"
-#include "ccnx-pco.h"
 #include "logging.h"
 
 #include <boost/make_shared.hpp>
@@ -33,17 +32,17 @@ INIT_LOGGER ("Fetcher");
 
 using namespace boost;
 using namespace std;
-using namespace Ccnx;
+using namespace ndn;
 
-Fetcher::Fetcher (Ccnx::CcnxWrapperPtr ccnx,
+Fetcher::Fetcher (ndn::Face face,
                   ExecutorPtr executor,
                   const SegmentCallback &segmentCallback,
                   const FinishCallback &finishCallback,
                   OnFetchCompleteCallback onFetchComplete, OnFetchFailedCallback onFetchFailed,
-                  const Ccnx::Name &deviceName, const Ccnx::Name &name, int64_t minSeqNo, int64_t maxSeqNo,
+                  const ndn::Name &deviceName, const ndn::Name &name, int64_t minSeqNo, int64_t maxSeqNo,
                   boost::posix_time::time_duration timeout/* = boost::posix_time::seconds (30)*/,
-                  const Ccnx::Name &forwardingHint/* = Ccnx::Name ()*/)
-  : m_ccnx (ccnx)
+                  const ndn::Name &forwardingHint/* = ndn::Name ()*/)
+  : m_ndn (face)
 
   , m_segmentCallback (segmentCallback)
   , m_onFetchComplete (onFetchComplete)
@@ -86,7 +85,7 @@ Fetcher::RestartPipeline ()
 }
 
 void
-Fetcher::SetForwardingHint (const Ccnx::Name &forwardingHint)
+Fetcher::SetForwardingHint (const ndn::Name &forwardingHint)
 {
   m_forwardingHint = forwardingHint;
 }
@@ -109,10 +108,12 @@ Fetcher::FillPipeline ()
       _LOG_DEBUG (" >>> i " << Name (m_forwardingHint)(m_name) << ", seq = " << (m_minSendSeqNo + 1 ));
 
       // cout << ">>> " << m_minSendSeqNo+1 << endl;
-      m_ccnx->sendInterest (Name (m_forwardingHint)(m_name)(m_minSendSeqNo+1),
-                            Closure (bind(&Fetcher::OnData, this, m_minSendSeqNo+1, _1, _2),
-                                     bind(&Fetcher::OnTimeout, this, m_minSendSeqNo+1, _1, _2, _3)),
-                            Selectors().interestLifetime (1)); // Alex: this lifetime should be changed to RTO
+
+      ndn::Interest interest(Name (m_forwardingHint)(m_name)(m_minSendSeqNo+1), 1); // Alex: this lifetime should be changed to RTO
+      m_ndn.expressInterest(interest,
+    		  	  	  bind(&Fetcher::OnData, this, m_minSendSeqNo+1, _1, _2),
+    				  bind(&Fetcher::OnTimeout, this, m_minSendSeqNo+1, _1, _2, _3, _4));
+
       _LOG_DEBUG (" >>> i ok");
 
       m_activePipeline ++;
@@ -120,13 +121,13 @@ Fetcher::FillPipeline ()
 }
 
 void
-Fetcher::OnData (uint64_t seqno, const Ccnx::Name &name, PcoPtr data)
+Fetcher::OnData (uint64_t seqno, const ndn::Name &name, shared_ptr<ndn::Data> data)
 {
   m_executor->execute (bind (&Fetcher::OnData_Execute, this, seqno, name, data));
 }
 
 void
-Fetcher::OnData_Execute (uint64_t seqno, Ccnx::Name name, Ccnx::PcoPtr data)
+Fetcher::OnData_Execute (uint64_t seqno, ndn::Name name, shared_ptr<ndn::Data> data)
 {
   _LOG_DEBUG (" <<< d " << name.getPartialName (0, name.size () - 1) << ", seq = " << seqno);
 
@@ -151,7 +152,7 @@ Fetcher::OnData_Execute (uint64_t seqno, Ccnx::Name name, Ccnx::PcoPtr data)
     {
       // in this case we don't care whether "data" is verified,  in fact, we expect it is unverified
       try {
-        PcoPtr pco = make_shared<ParsedContentObject> (*data->contentPtr ());
+    	shared_ptr<ndn::Data> pco = make_shared<ParsedContentObject> (*data->contentPtr ());
 
         // we need to verify this pco and apply callback only when verified
         // TODO: check verified !!!
@@ -233,14 +234,14 @@ Fetcher::OnData_Execute (uint64_t seqno, Ccnx::Name name, Ccnx::PcoPtr data)
 }
 
 void
-Fetcher::OnTimeout (uint64_t seqno, const Ccnx::Name &name, const Closure &closure, Selectors selectors)
+Fetcher::OnTimeout (uint64_t seqno, const ndn::Name &name, const OnData& onData, const OnTimeout& onTimeout, ndn::Interest interest)
 {
   _LOG_DEBUG (this << ", " << m_executor.get ());
-  m_executor->execute (bind (&Fetcher::OnTimeout_Execute, this, seqno, name, closure, selectors));
+  m_executor->execute (bind (&Fetcher::OnTimeout_Execute, this, seqno, name, onData, onTimeout, interest));
 }
 
 void
-Fetcher::OnTimeout_Execute (uint64_t seqno, Ccnx::Name name, Ccnx::Closure closure, Ccnx::Selectors selectors)
+Fetcher::OnTimeout_Execute (uint64_t seqno, ndn::Name name, const OnData& onData, const OnTimeout& onTimeout, ndn::Interest interest)
 {
   _LOG_DEBUG (" <<< :( timeout " << name.getPartialName (0, name.size () - 1) << ", seq = " << seqno);
 
@@ -283,6 +284,6 @@ Fetcher::OnTimeout_Execute (uint64_t seqno, Ccnx::Name name, Ccnx::Closure closu
   else
     {
       _LOG_DEBUG ("Asking to reexpress seqno: " << seqno);
-      m_ccnx->sendInterest (name, closure, selectors);
+      m_ndn.expressInterest(interest, bind(&onData, this, _1, _2), bind(&onTimeout, this, _1); //TODO: correct? confused on how bind works
     }
 }

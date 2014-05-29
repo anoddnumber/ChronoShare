@@ -30,7 +30,6 @@
 #include <stdint.h>
 #include "scheduler.h"
 #include "executor.h"
-#include "ccnx-wrapper.h"
 #include "fetch-task-db.h"
 
 #include "fetcher.h"
@@ -44,12 +43,12 @@ public:
       PRIORITY_HIGH
     };
 
-  typedef boost::function<Ccnx::Name(const Ccnx::Name &)> Mapping;
-  typedef boost::function<void(Ccnx::Name &deviceName, Ccnx::Name &baseName, uint64_t seq, Ccnx::PcoPtr pco)> SegmentCallback;
-  typedef boost::function<void(Ccnx::Name &deviceName, Ccnx::Name &baseName)> FinishCallback;
-  FetchManager (Ccnx::CcnxWrapperPtr ccnx,
+  typedef boost::function<ndn::Name(const ndn::Name &)> Mapping;
+  typedef boost::function<void(ndn::Name &deviceName, ndn::Name &baseName, uint64_t seq, shared_ptr<ndn::Data> pco)> SegmentCallback;
+  typedef boost::function<void(ndn::Name &deviceName, ndn::Name &baseName)> FinishCallback;
+  FetchManager (face::Face face,
                 const Mapping &mapping,
-                const Ccnx::Name &broadcastForwardingHint,
+                const ndn::Name &broadcastForwardingHint,
                 uint32_t parallelFetches = 3,
                 const SegmentCallback &defaultSegmentCallback = SegmentCallback(),
                 const FinishCallback &defaultFinishCallback = FinishCallback(),
@@ -58,30 +57,31 @@ public:
   virtual ~FetchManager ();
 
   void
-  Enqueue (const Ccnx::Name &deviceName, const Ccnx::Name &baseName,
+  Enqueue (const ndn::Name &deviceName, const ndn::Name &baseName,
            const SegmentCallback &segmentCallback, const FinishCallback &finishCallback,
            uint64_t minSeqNo, uint64_t maxSeqNo, int priority=PRIORITY_NORMAL);
 
   // Enqueue using default callbacks
   void
-  Enqueue (const Ccnx::Name &deviceName, const Ccnx::Name &baseName,
+  Enqueue (const ndn::Name &deviceName, const ndn::Name &baseName,
            uint64_t minSeqNo, uint64_t maxSeqNo, int priority=PRIORITY_NORMAL);
 
   // only for Fetcher
+  //TODO: what do i do here? inline ndn::Face..............GetNdn()?????
   inline Ccnx::CcnxWrapperPtr
   GetCcnx ();
 
 private:
   // Fetch Events
   void
-  DidDataSegmentFetched (Fetcher &fetcher, uint64_t seqno, const Ccnx::Name &basename,
-                         const Ccnx::Name &name, Ccnx::PcoPtr data);
+  DidDataSegmentFetched (Fetcher &fetcher, uint64_t seqno, const ndn::Name &basename,
+                         const ndn::Name &name, shared_ptr<ndn::Data> data);
 
   void
   DidNoDataTimeout (Fetcher &fetcher);
 
   void
-  DidFetchComplete (Fetcher &fetcher, const Ccnx::Name &deviceName, const Ccnx::Name &baseName);
+  DidFetchComplete (Fetcher &fetcher, const ndn::Name &deviceName, const ndn::Name &baseName);
 
   void
   ScheduleFetches ();
@@ -90,7 +90,7 @@ private:
   TimedWait (Fetcher &fetcher);
 
 private:
-  Ccnx::CcnxWrapperPtr m_ccnx;
+  ndn::Face m_ndn;
   Mapping m_mapping;
 
   uint32_t m_maxParallelFetches;
@@ -110,13 +110,13 @@ private:
   FinishCallback m_defaultFinishCallback;
   FetchTaskDbPtr m_taskDb;
 
-  const Ccnx::Name m_broadcastHint;
+  const ndn::Name m_broadcastHint;
 };
 
-Ccnx::CcnxWrapperPtr
-FetchManager::GetCcnx ()
+ndn::Face
+FetchManager::GetNdn ()
 {
-  return m_ccnx;
+	return m_ndn;
 }
 
 typedef boost::error_info<struct tag_errmsg, std::string> errmsg_info_str;

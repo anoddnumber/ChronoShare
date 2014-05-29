@@ -22,8 +22,6 @@
 #define FETCH_TASK_DB_H
 
 #include <sqlite3.h>
-#include <ccnx-common.h>
-#include <ccnx-name.h>
 #include <boost/filesystem.hpp>
 #include <boost/shared_ptr.hpp>
 
@@ -36,12 +34,12 @@ public:
   // task with same deviceName and baseName combination will be added only once
   // if task already exists, this call does nothing
   void
-  addTask(const Ccnx::Name &deviceName, const Ccnx::Name &baseName, uint64_t minSeqNo, uint64_t maxSeqNo, int priority);
+  addTask(const ndn::Name &deviceName, const ndn::Name &baseName, uint64_t minSeqNo, uint64_t maxSeqNo, int priority);
 
   void
-  deleteTask(const Ccnx::Name &deviceName, const Ccnx::Name &baseName);
+  deleteTask(const ndn::Name &deviceName, const ndn::Name &baseName);
 
-  typedef boost::function<void(const Ccnx::Name &, const Ccnx::Name &, uint64_t, uint64_t, int)> FetchTaskCallback;
+  typedef boost::function<void(const ndn::Name &, const ndn::Name &, uint64_t, uint64_t, int)> FetchTaskCallback;
 
   void
   foreachTask(const FetchTaskCallback &callback);

@@ -27,8 +27,6 @@
 #include "sync-log.h"
 #include "action-item.pb.h"
 #include "file-item.pb.h"
-#include "ccnx-wrapper.h"
-#include "ccnx-pco.h"
 
 #include <boost/tuple/tuple.hpp>
 
@@ -39,13 +37,13 @@ typedef boost::shared_ptr<ActionItem> ActionItemPtr;
 class ActionLog : public DbHelper
 {
 public:
-  typedef boost::function<void (std::string /*filename*/, Ccnx::Name /*device_name*/, sqlite3_int64 /*seq_no*/,
+  typedef boost::function<void (std::string /*filename*/, ndn::Name /*device_name*/, sqlite3_int64 /*seq_no*/,
                                 HashPtr /*hash*/, time_t /*m_time*/, int /*mode*/, int /*seg_num*/)> OnFileAddedOrChangedCallback;
 
   typedef boost::function<void (std::string /*filename*/)> OnFileRemovedCallback;
 
 public:
-  ActionLog (Ccnx::CcnxWrapperPtr ccnx, const boost::filesystem::path &path,
+  ActionLog (ndn::Face face, const boost::filesystem::path &path,
              SyncLogPtr syncLog,
              const std::string &sharedFolder, const std::string &appName,
              OnFileAddedOrChangedCallback onFileAddedOrChanged, OnFileRemovedCallback onFileRemoved);
@@ -73,7 +71,7 @@ public:
   //////////////////////////
 
   ActionItemPtr
-  AddRemoteAction (const Ccnx::Name &deviceName, sqlite3_int64 seqno, Ccnx::PcoPtr actionPco);
+  AddRemoteAction (const ndn::Name &deviceName, sqlite3_int64 seqno, shared_ptr<ndn::Data> actionPco);
 
   /**
    * @brief Add remote action using just action's parsed content object
@@ -81,23 +79,23 @@ public:
    * This function extracts device name and sequence number from the content object's and calls the overloaded method
    */
   ActionItemPtr
-  AddRemoteAction (Ccnx::PcoPtr actionPco);
+  AddRemoteAction (shared_ptr<ndn::Data> actionPco);
 
   ///////////////////////////
   // General operations    //
   ///////////////////////////
 
-  Ccnx::PcoPtr
-  LookupActionPco (const Ccnx::Name &deviceName, sqlite3_int64 seqno);
+  shared_ptr<ndn::Data>
+  LookupActionData (const ndn::Name &deviceName, sqlite3_int64 seqno);
 
-  Ccnx::PcoPtr
-  LookupActionPco (const Ccnx::Name &actionName);
-
-  ActionItemPtr
-  LookupAction (const Ccnx::Name &deviceName, sqlite3_int64 seqno);
+  shared_ptr<ndn::Data>
+  LookupActionPco (const ndn::Name &actionName);
 
   ActionItemPtr
-  LookupAction (const Ccnx::Name &actionName);
+  LookupAction (const ndn::Name &deviceName, sqlite3_int64 seqno);
+
+  ActionItemPtr
+  LookupAction (const ndn::Name &actionName);
 
   FileItemPtr
   LookupAction (const std::string &filename, sqlite3_int64 version, const Hash &filehash);
@@ -106,11 +104,11 @@ public:
    * @brief Lookup up to [limit] actions starting [offset] in decreasing order (by timestamp) and calling visitor(device_name,seqno,action) for each action
    */
   bool
-  LookupActionsInFolderRecursively (const boost::function<void (const Ccnx::Name &name, sqlite3_int64 seq_no, const ActionItem &)> &visitor,
+  LookupActionsInFolderRecursively (const boost::function<void (const ndn::Name &name, sqlite3_int64 seq_no, const ActionItem &)> &visitor,
                                     const std::string &folder, int offset=0, int limit=-1);
 
   bool
-  LookupActionsForFile (const boost::function<void (const Ccnx::Name &name, sqlite3_int64 seq_no, const ActionItem &)> &visitor,
+  LookupActionsForFile (const boost::function<void (const ndn::Name &name, sqlite3_int64 seq_no, const ActionItem &)> &visitor,
                         const std::string &file, int offset=0, int limit=-1);
 
   void
@@ -126,7 +124,7 @@ public:
   LogSize ();
 
 private:
-  boost::tuple<sqlite3_int64 /*version*/, Ccnx::CcnxCharbufPtr /*device name*/, sqlite3_int64 /*seq_no*/>
+  boost::tuple<sqlite3_int64 /*version*/, ndn::BufferPtr /*device name*/, sqlite3_int64 /*seq_no*/>
   GetLatestActionForFile (const std::string &filename);
 
   static void
@@ -136,7 +134,7 @@ private:
   SyncLogPtr m_syncLog;
   FileStatePtr m_fileState;
 
-  Ccnx::CcnxWrapperPtr m_ccnx;
+  Ndn::Face m_ndn;
   std::string m_sharedFolderName;
   std::string m_appName;
 

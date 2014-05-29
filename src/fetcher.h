@@ -22,9 +22,6 @@
 #ifndef FETCHER_H
 #define FETCHER_H
 
-#include "ccnx-wrapper.h"
-#include "ccnx-name.h"
-
 #include "executor.h"
 #include <boost/intrusive/list.hpp>
 #include <boost/date_time/posix_time/posix_time_types.hpp>
@@ -37,20 +34,20 @@ class FetchManager;
 class Fetcher
 {
 public:
-  typedef boost::function<void(Ccnx::Name &deviceName, Ccnx::Name &baseName, uint64_t seq, Ccnx::PcoPtr pco)> SegmentCallback;
-  typedef boost::function<void(Ccnx::Name &deviceName, Ccnx::Name &baseName)> FinishCallback;
-  typedef boost::function<void (Fetcher &, const Ccnx::Name &deviceName, const Ccnx::Name &baseName)> OnFetchCompleteCallback;
+  typedef boost::function<void(ndn::Name &deviceName, ndn::Name &baseName, uint64_t seq, shared_ptr<ndn::Data> pco)> SegmentCallback;
+  typedef boost::function<void(ndn::Name &deviceName, ndn::Name &baseName)> FinishCallback;
+  typedef boost::function<void (Fetcher &, const ndn::Name &deviceName, const ndn::Name &baseName)> OnFetchCompleteCallback;
   typedef boost::function<void (Fetcher &)> OnFetchFailedCallback;
 
-  Fetcher (Ccnx::CcnxWrapperPtr ccnx,
+  Fetcher (ndn::Face face,
            ExecutorPtr executor,
            const SegmentCallback &segmentCallback, // callback passed by caller of FetchManager
            const FinishCallback &finishCallback, // callback passed by caller of FetchManager
            OnFetchCompleteCallback onFetchComplete, OnFetchFailedCallback onFetchFailed, // callbacks provided by FetchManager
-           const Ccnx::Name &deviceName, const Ccnx::Name &name, int64_t minSeqNo, int64_t maxSeqNo,
+           const ndn::Name &deviceName, const ndn::Name &name, int64_t minSeqNo, int64_t maxSeqNo,
            boost::posix_time::time_duration timeout = boost::posix_time::seconds (30), // this time is not precise, but sets min bound
                                                                                   // actual time depends on how fast Interests timeout
-           const Ccnx::Name &forwardingHint = Ccnx::Name ());
+           const ndn::Name &forwardingHint = ndn::Name ());
   virtual ~Fetcher ();
 
   inline bool
@@ -63,15 +60,15 @@ public:
   RestartPipeline ();
 
   void
-  SetForwardingHint (const Ccnx::Name &forwardingHint);
+  SetForwardingHint (const ndn::Name &forwardingHint);
 
-  const Ccnx::Name &
+  const ndn::Name &
   GetForwardingHint () const { return m_forwardingHint; }
 
-  const Ccnx::Name &
+  const ndn::Name &
   GetName () const { return m_name; }
 
-  const Ccnx::Name &
+  const ndn::Name &
   GetDeviceName () const { return m_deviceName; }
 
   double
@@ -91,22 +88,22 @@ private:
   FillPipeline ();
 
   void
-  OnData (uint64_t seqno, const Ccnx::Name &name, Ccnx::PcoPtr data);
+  OnData (uint64_t seqno, const ndn::Name &name, shared_ptr<ndn::Data> data);
 
   void
-  OnData_Execute (uint64_t seqno, Ccnx::Name name, Ccnx::PcoPtr data);
+  OnData_Execute (uint64_t seqno, ndn::Name name, shared_ptr<ndn::Data> data);
 
   void
-  OnTimeout (uint64_t seqno, const Ccnx::Name &name, const Ccnx::Closure &closure, Ccnx::Selectors selectors);
+  OnTimeout (uint64_t seqno, const ndn::Name &name, const OnData& onData, const OnTimeout& onTimeout, ndn::Interest interest);
 
   void
-  OnTimeout_Execute (uint64_t seqno, Ccnx::Name name, Ccnx::Closure closure, Ccnx::Selectors selectors);
+  OnTimeout_Execute (uint64_t seqno, ndn::Name name, const OnData& onData, const OnTimeout& onTimeout, ndn::Interest interest);
 
 public:
   boost::intrusive::list_member_hook<> m_managerListHook;
 
 private:
-  Ccnx::CcnxWrapperPtr m_ccnx;
+  ndn::Face m_ndn;
 
   SegmentCallback m_segmentCallback;
   OnFetchCompleteCallback m_onFetchComplete;
@@ -117,9 +114,9 @@ private:
   bool m_active;
   bool m_timedwait;
 
-  Ccnx::Name m_name;
-  Ccnx::Name m_deviceName;
-  Ccnx::Name m_forwardingHint;
+  ndn::Name m_name;
+  ndn::Name m_deviceName;
+  ndn::Name m_forwardingHint;
 
   boost::posix_time::time_duration m_maximumNoActivityPeriod;
 

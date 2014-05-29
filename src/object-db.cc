@@ -29,7 +29,7 @@
 INIT_LOGGER ("Object.Db");
 
 using namespace std;
-using namespace Ccnx;
+using namespace ndn;
 using namespace boost;
 namespace fs = boost::filesystem;
 
@@ -78,7 +78,7 @@ ObjectDb::ObjectDb (const fs::path &folder, const std::string &hash)
 }
 
 bool
-ObjectDb::DoesExist (const boost::filesystem::path &folder, const Ccnx::Name &deviceName, const std::string &hash)
+ObjectDb::DoesExist (const boost::filesystem::path &folder, const ndn::Name &deviceName, const std::string &hash)
 {
   fs::path actualFolder = folder / "objects" / hash.substr (0, 2);
   bool retval = false;
@@ -90,7 +90,8 @@ ObjectDb::DoesExist (const boost::filesystem::path &folder, const Ccnx::Name &de
       sqlite3_stmt *stmt;
       sqlite3_prepare_v2 (db, "SELECT count(*), count(nullif(content_object,0)) FROM File WHERE device_name=?", -1, &stmt, 0);
 
-      CcnxCharbufPtr buf = deviceName.toCcnxCharbuf ();
+      ndn::Buffer buf = ndn::Buffer(&(deviceName.toUri().front()), deviceName.size()); //TODO correct?
+
       sqlite3_bind_blob (stmt, 1, buf->buf (), buf->length (), SQLITE_TRANSIENT);
 
       int res = sqlite3_step (stmt);
@@ -128,7 +129,7 @@ ObjectDb::~ObjectDb ()
 }
 
 void
-ObjectDb::saveContentObject (const Ccnx::Name &deviceName, sqlite3_int64 segment, const Ccnx::Bytes &data)
+ObjectDb::saveContentObject (const ndn::Name &deviceName, sqlite3_int64 segment, const ndn::Buffer &data)
 {
   sqlite3_stmt *stmt;
   sqlite3_prepare_v2 (m_db, "INSERT INTO File "
@@ -137,10 +138,10 @@ ObjectDb::saveContentObject (const Ccnx::Name &deviceName, sqlite3_int64 segment
 
   //_LOG_DEBUG ("Saving content object for [" << deviceName << ", seqno: " << segment << ", size: " << data.size () << "]");
 
-  CcnxCharbufPtr buf = deviceName.toCcnxCharbuf ();
+  ndn::Buffer buf = ndn::Buffer(&(deviceName.toUri().front()), deviceName.size()); //TODO correct?
   sqlite3_bind_blob (stmt, 1, buf->buf (), buf->length (), SQLITE_STATIC);
   sqlite3_bind_int64 (stmt, 2, segment);
-  sqlite3_bind_blob (stmt, 3, &data[0], data.size (), SQLITE_STATIC);
+  sqlite3_bind_blob (stmt, 3, data->buf (), data.size (), SQLITE_STATIC);
 
   sqlite3_step (stmt);
   //_LOG_DEBUG ("After saving object: " << sqlite3_errmsg (m_db));
@@ -150,17 +151,19 @@ ObjectDb::saveContentObject (const Ccnx::Name &deviceName, sqlite3_int64 segment
   m_lastUsed = time(NULL);
 }
 
-Ccnx::BytesPtr
-ObjectDb::fetchSegment (const Ccnx::Name &deviceName, sqlite3_int64 segment)
+//ndn::Buffer
+Ccnx::BytesPtr //TODO make it return a Buffer instead of a BytesPtr (???)
+ObjectDb::fetchSegment (const ndn::Name &deviceName, sqlite3_int64 segment)
 {
   sqlite3_stmt *stmt;
   sqlite3_prepare_v2 (m_db, "SELECT content_object FROM File WHERE device_name=? AND segment=?", -1, &stmt, 0);
 
-  CcnxCharbufPtr buf = deviceName.toCcnxCharbuf ();
+  CcnxCharbufPtr buf = deviceName.toCcnxCharbuf (); //TODO
   sqlite3_bind_blob (stmt, 1, buf->buf (), buf->length (), SQLITE_TRANSIENT);
   sqlite3_bind_int64 (stmt, 2, segment);
 
   BytesPtr ret;
+  //ndn::Buffer ret;
 
   int res = sqlite3_step (stmt);
   if (res == SQLITE_ROW)
@@ -169,6 +172,7 @@ ObjectDb::fetchSegment (const Ccnx::Name &deviceName, sqlite3_int64 segment)
       int bufBytes = sqlite3_column_bytes (stmt, 0);
 
       ret = make_shared<Bytes> (buf, buf+bufBytes);
+
     }
 
   sqlite3_finalize (stmt);

@@ -23,7 +23,7 @@
 
 using namespace std;
 using namespace boost;
-using namespace Ccnx;
+using namespace ndn;
 namespace fs = boost::filesystem;
 
 const string INIT_DATABASE = "\
@@ -72,12 +72,15 @@ FetchTaskDb::~FetchTaskDb()
 }
 
 void
-FetchTaskDb::addTask(const Name &deviceName, const Name &baseName, uint64_t minSeqNo, uint64_t maxSeqNo, int priority)
+FetchTaskDb::addTask(const ndn::Name &deviceName, const ndn::Name &baseName, uint64_t minSeqNo, uint64_t maxSeqNo, int priority)
 {
   sqlite3_stmt *stmt;
   sqlite3_prepare_v2(m_db, "INSERT OR IGNORE INTO Task (deviceName, baseName, minSeqNo, maxSeqNo, priority) VALUES (?, ?, ?, ?, ?)", -1, &stmt, 0);
-  CcnxCharbufPtr deviceBuf = CcnxCharbufPtr(deviceName);
-  CcnxCharbufPtr baseBuf = CcnxCharbufPtr(baseName);
+
+  ndn::BufferPtr deviceBuf = deviceName; //Instead?!?!?!?
+  ndn::BufferPtr baseBuf = baseName; //??????
+  ndn::Buffer deviceBuf = ndn::Buffer(&(deviceName.toUri().front()), deviceName.size()); //TODO correct?
+  ndn::Buffer baseBuf = ndn::Buffer(&(baseName.toUri().front()), baseName.size()); //TODO correct?
   sqlite3_bind_blob(stmt, 1, deviceBuf->buf(), deviceBuf->length(), SQLITE_STATIC);
   sqlite3_bind_blob(stmt, 2, baseBuf->buf(), baseBuf->length(), SQLITE_STATIC);
   sqlite3_bind_int64(stmt, 3, minSeqNo);
@@ -96,8 +99,12 @@ FetchTaskDb::deleteTask(const Name &deviceName, const Name &baseName)
 {
   sqlite3_stmt *stmt;
   sqlite3_prepare_v2(m_db, "DELETE FROM Task WHERE deviceName = ? AND baseName = ?;", -1, &stmt, 0);
-  CcnxCharbufPtr deviceBuf = CcnxCharbufPtr(deviceName);
-  CcnxCharbufPtr baseBuf = CcnxCharbufPtr(baseName);
+  CcnxCharbufPtr deviceBuf = CcnxCharbufPtr(deviceName); //TODO
+  CcnxCharbufPtr baseBuf = CcnxCharbufPtr(baseName); //TODO
+  ndn::BufferPtr deviceBuf = ndn::BufferPtr(deviceName);//TODO correct?
+  ndn::BufferPtr baseBuf = ndn::BufferPtr(baseName); //TODO correct?
+
+
   sqlite3_bind_blob(stmt, 1, deviceBuf->buf(), deviceBuf->length(), SQLITE_STATIC);
   sqlite3_bind_blob(stmt, 2, baseBuf->buf(), baseBuf->length(), SQLITE_STATIC);
   int res = sqlite3_step(stmt);

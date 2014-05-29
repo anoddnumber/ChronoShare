@@ -30,7 +30,7 @@ INIT_LOGGER ("Sync.Log");
 
 using namespace boost;
 using namespace std;
-using namespace Ccnx;
+using namespace ndn;
 
 // static  void xTrace (void*, const char* q)
 // {
@@ -97,7 +97,7 @@ CREATE TRIGGER SyncLogGuard_trigger                                     \n\
 ";
 
 
-SyncLog::SyncLog (const boost::filesystem::path &path, const Ccnx::Name &localName)
+SyncLog::SyncLog (const boost::filesystem::path &path, const ndn::Name &localName)
   : DbHelper (path / ".chronoshare", "sync-log.db")
   , m_localName (localName)
 {
@@ -109,8 +109,9 @@ SyncLog::SyncLog (const boost::filesystem::path &path, const Ccnx::Name &localNa
   sqlite3_stmt *stmt;
   int res = sqlite3_prepare_v2 (m_db, "SELECT device_id, seq_no FROM SyncNodes WHERE device_name=?", -1, &stmt, 0);
 
-  Ccnx::CcnxCharbufPtr name = m_localName;
-  sqlite3_bind_blob (stmt, 1, name->buf (), name->length (), SQLITE_STATIC);
+  ndn::BufferPtr name = m_localName;
+
+  sqlite3_bind_blob (stmt, 1, name->buf (), name->size (), SQLITE_STATIC);
 
   if (sqlite3_step (stmt) == SQLITE_ROW)
     {
@@ -267,15 +268,16 @@ SyncLog::LookupSyncLog (const Hash &stateHash)
 }
 
 void
-SyncLog::UpdateDeviceSeqNo (const Ccnx::Name &name, sqlite3_int64 seqNo)
+SyncLog::UpdateDeviceSeqNo (const ndn::Name &name, sqlite3_int64 seqNo)
 {
   sqlite3_stmt *stmt;
   // update is performed using trigger
   int res = sqlite3_prepare (m_db, "INSERT INTO SyncNodes (device_name, seq_no) VALUES (?,?);",
                              -1, &stmt, 0);
 
-  Ccnx::CcnxCharbufPtr nameBuf = name;
-  res += sqlite3_bind_blob  (stmt, 1, nameBuf->buf (), nameBuf->length (), SQLITE_STATIC);
+  ndn::BufferPtr nameBuf = name;
+
+  res += sqlite3_bind_blob  (stmt, 1, nameBuf->buf (), nameBuf->size (), SQLITE_STATIC);
   res += sqlite3_bind_int64 (stmt, 2, seqNo);
   sqlite3_step (stmt);
 
@@ -317,12 +319,12 @@ SyncLog::UpdateDeviceSeqNo (sqlite3_int64 deviceId, sqlite3_int64 seqNo)
 }
 
 Name
-SyncLog::LookupLocator (const Name &deviceName)
+SyncLog::LookupLocator (const ndn::Name &deviceName)
 {
   sqlite3_stmt *stmt;
   sqlite3_prepare_v2 (m_db, "SELECT last_known_locator FROM SyncNodes WHERE device_name=?;", -1, &stmt, 0);
-  Ccnx::CcnxCharbufPtr nameBuf = deviceName;
-  sqlite3_bind_blob (stmt, 1, nameBuf->buf(), nameBuf->length(), SQLITE_STATIC);
+  ndn::BufferPtr nameBuf = deviceName;
+  sqlite3_bind_blob (stmt, 1, nameBuf->buf(), nameBuf->size(), SQLITE_STATIC);
   int res = sqlite3_step (stmt);
   Name locator;
   switch (res)
@@ -341,20 +343,20 @@ SyncLog::LookupLocator (const Name &deviceName)
   return locator;
 }
 
-Ccnx::Name
+ndn::Name
 SyncLog::LookupLocalLocator ()
 {
   return LookupLocator (m_localName);
 }
 
 void
-SyncLog::UpdateLocator(const Name &deviceName, const Name &locator)
+SyncLog::UpdateLocator(const ndn::Name &deviceName, const Name &locator)
 {
   sqlite3_stmt *stmt;
   sqlite3_prepare_v2 (m_db, "UPDATE SyncNodes SET last_known_locator=?,last_update=datetime('now') WHERE device_name=?;", -1, &stmt, 0);
-  Ccnx::CcnxCharbufPtr nameBuf = deviceName;
-  Ccnx::CcnxCharbufPtr locatorBuf = locator;
-  sqlite3_bind_blob (stmt, 1, locatorBuf->buf(), locatorBuf->length(), SQLITE_STATIC);
+  ndn::BufferPtr nameBuf = deviceName;
+  ndn::BufferPtr locatorBuf = locator;
+  sqlite3_bind_blob (stmt, 1, locatorBuf->buf(), locatorBuf->size(), SQLITE_STATIC);
   sqlite3_bind_blob (stmt, 2, nameBuf->buf(), nameBuf->length(),       SQLITE_STATIC);
   int res = sqlite3_step (stmt);
 
@@ -367,7 +369,7 @@ SyncLog::UpdateLocator(const Name &deviceName, const Name &locator)
 }
 
 void
-SyncLog::UpdateLocalLocator (const Ccnx::Name &forwardingHint)
+SyncLog::UpdateLocalLocator (const ndn::Name &forwardingHint)
 {
   return UpdateLocator (m_localName, forwardingHint);
 }
@@ -489,13 +491,13 @@ SELECT sn.device_name, sn.last_known_locator, s_old.seq_no, s_new.seq_no\
 }
 
 sqlite3_int64
-SyncLog::SeqNo(const Name &name)
+SyncLog::SeqNo(const ndn::Name &name)
 {
   sqlite3_stmt *stmt;
   sqlite3_int64 seq = -1;
   sqlite3_prepare_v2 (m_db, "SELECT seq_no FROM SyncNodes WHERE device_name=?;", -1, &stmt, 0);
-  Ccnx::CcnxCharbufPtr nameBuf = name;
-  sqlite3_bind_blob (stmt, 1, nameBuf->buf (), nameBuf->length (), SQLITE_STATIC);
+  ndn::BufferPtr nameBuf = name;
+  sqlite3_bind_blob (stmt, 1, nameBuf->buf (), nameBuf->size (), SQLITE_STATIC);
   if (sqlite3_step (stmt) == SQLITE_ROW)
   {
     seq = sqlite3_column_int64 (stmt, 0);

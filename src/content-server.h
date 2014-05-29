@@ -22,7 +22,6 @@
 #ifndef CONTENT_SERVER_H
 #define CONTENT_SERVER_H
 
-#include "ccnx-wrapper.h"
 #include "object-db.h"
 #include "action-log.h"
 #include <set>
@@ -31,11 +30,13 @@
 #include <boost/thread/locks.hpp>
 #include "scheduler.h"
 
+struct RegisteredPrefixId;
+
 class ContentServer
 {
 public:
-  ContentServer(Ccnx::CcnxWrapperPtr ccnx, ActionLogPtr actionLog, const boost::filesystem::path &rootDir,
-                const Ccnx::Name &userName, const std::string &sharedFolderName, const std::string &appName,
+  ContentServer(ndn::Face face, ActionLogPtr actionLog, const boost::filesystem::path &rootDir,
+                const ndn::Name &userName, const std::string &sharedFolderName, const std::string &appName,
                 int freshness = -1);
   ~ContentServer();
 
@@ -43,39 +44,43 @@ public:
   // /some-prefix/topology-independent-name
   // currently /topology-independent-name must begin with /action or /file
   // so that ContentServer knows where to look for the content object
-  void registerPrefix(const Ccnx::Name &prefix);
-  void deregisterPrefix(const Ccnx::Name &prefix);
+  void registerPrefix(const ndn::Name &prefix);
+  void deregisterPrefix(const ndn::Name &prefix);
 
 private:
-  void
-  filterAndServe (Ccnx::Name forwardingHint, const Ccnx::Name &interest);
 
   void
-  filterAndServeImpl (const Ccnx::Name &forwardingHint, const Ccnx::Name &name, const Ccnx::Name &interest);
+  doNothing ();
 
   void
-  serve_Action (const Ccnx::Name &forwardingHint, const Ccnx::Name &name, const Ccnx::Name &interest);
+  filterAndServe (ndn::Name forwardingHint, const ndn::Name &interest);
 
   void
-  serve_File (const Ccnx::Name &forwardingHint, const Ccnx::Name &name, const Ccnx::Name &interest);
+  filterAndServeImpl (const ndn::Name &forwardingHint, const ndn::Name &name, const ndn::Name &interest);
 
   void
-  serve_Action_Execute(const Ccnx::Name &forwardingHint, const Ccnx::Name &name, const Ccnx::Name &interest);
+  serve_Action (const ndn::Name &forwardingHint, const ndn::Name &name, const ndn::Name &interest);
 
   void
-  serve_File_Execute(const Ccnx::Name &forwardingHint, const Ccnx::Name &name, const Ccnx::Name &interest);
+  serve_File (const ndn::Name &forwardingHint, const ndn::Name &name, const ndn::Name &interest);
+
+  void
+  serve_Action_Execute(const ndn::Name &forwardingHint, const ndn::Name &name, const ndn::Name &interest);
+
+  void
+  serve_File_Execute(const ndn::Name &forwardingHint, const ndn::Name &name, const ndn::Name &interest);
 
   void
   flushStaleDbCache();
 
 private:
-  Ccnx::CcnxWrapperPtr m_ccnx;
+  ndn::Face m_ndn; //should this be a shared_ptr<Face> instead??
   ActionLogPtr m_actionLog;
   typedef boost::shared_mutex Mutex;
 
   typedef boost::unique_lock<Mutex> ScopedLock;
-  typedef std::set<Ccnx::Name>::iterator PrefixIt;
-  std::set<Ccnx::Name> m_prefixes;
+  typedef std::set<RegisteredPrefixId>::iterator PrefixIt;
+  std::set<RegisteredPrefixId> m_prefixes;
   Mutex m_mutex;
   boost::filesystem::path m_dbFolder;
   int m_freshness;
@@ -85,7 +90,7 @@ private:
   DbCache m_dbCache;
   Mutex m_dbCacheMutex;
 
-  Ccnx::Name  m_userName;
+  ndn::Name m_userName;
   std::string m_sharedFolderName;
   std::string m_appName;
 };
