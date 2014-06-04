@@ -83,10 +83,10 @@ private:
   handleRecoverData(const ndn::Name &name, shared_ptr<ndn::Data> content);
 
   void
-  handleSyncInterestTimeout(const ndn::Name &name, const Ccnx::Closure &closure, Ccnx::Selectors selectors);
+  handleSyncInterestTimeout(const ndn::Name &name, const OnData& onData, const OnTimeout& onTimeout);
 
   void
-  handleRecoverInterestTimeout(const ndn::Name &name, const Ccnx::Closure &closure, Ccnx::Selectors selectors);
+  handleRecoverInterestTimeout(const ndn::Name &name, const OnData& onData, const OnTimeout& onTimeout);
 
   void
   deregister(const ndn::Name &name);
@@ -105,17 +105,16 @@ private:
   handleRecoverInterest(const ndn::Name &name);
 
   void
-  handleStateData(const Ccnx::Bytes &content);
+  handleStateData(const ndn::Buffer &content);
 
 private:
-  Ccnx::CcnxWrapperPtr m_ccnx;
   Ndn::Face m_ndn;
 
   SyncLogPtr m_log;
   SchedulerPtr m_scheduler;
   StateMsgCallback m_stateMsgCallback;
 
-  Ccnx::Name m_syncPrefix;
+  ndn::Name m_syncPrefix;
   HashPtr m_rootHash;
 
   IntervalGeneratorPtr m_recoverWaitGenerator;

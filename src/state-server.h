@@ -200,6 +200,11 @@ private:
   ndn::Name m_PREFIX_INFO;
   ndn::Name m_PREFIX_CMD;
 
+  RegisteredPrefixId* actionsFolderId;
+  RegisteredPrefixId* actionsFileId;
+  RegisteredPrefixId* filesFolderId;
+  RegisteredPrefixId* restoreFileId;
+
   boost::filesystem::path m_rootDir;
   int m_freshness;
 

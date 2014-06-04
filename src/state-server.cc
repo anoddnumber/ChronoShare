@@ -54,10 +54,12 @@ StateServer::StateServer(ndn::Face face, ActionLogPtr actionLog,
   // may be later /localhost should be replaced with /%C1.M.S.localhost
 
   // <PREFIX_INFO> = /localhost/<user's-device-name>/"chronoshare"/"info"
-  m_PREFIX_INFO = Name ("/localhost")(m_userName)("chronoshare")(m_sharedFolderName)("info");
+  m_PREFIX_INFO = ndn::Name ("/localhost");
+  m_PREFIX_INFO.append(m_userName).append("chronoshare").append(m_sharedFolderName).append("info");
 
   // <PREFIX_CMD> = /localhost/<user's-device-name>/"chronoshare"/"cmd"
-  m_PREFIX_CMD = Name ("/localhost")(m_userName)("chronoshare")(m_sharedFolderName)("cmd");
+  m_PREFIX_CMD = ndn::Name ("/localhost");
+  m_PREFIX_CMD.append(m_userName).append("chronoshare").append(m_sharedFolderName).append("cmd");
 
   m_executor.start ();
 
@@ -77,33 +79,37 @@ StateServer::registerPrefixes ()
   // currently supporting limited number of command.
   // will be extended to support all planned commands later
 
-  //TODO
   // <PREFIX_INFO>/"actions"/"all"/<segment>  get list of all actions
-  m_ccnx->setInterestFilter (Name (m_PREFIX_INFO)("actions")("folder"), bind(&StateServer::info_actions_folder, this, _1));
-  m_ccnx->setInterestFilter (Name (m_PREFIX_INFO)("actions")("file"),   bind(&StateServer::info_actions_file, this, _1));
 
-  //TODO: m_ndn.setInterestFilter (Name (m_PREFIX_INFO)("actions")("folder"), bind(&StateServer::info_actions_folder, this, _1));
-  //TODO: m_ndn.setInterestFilter (Name (m_PREFIX_INFO)("actions")("file"),   bind(&StateServer::info_actions_file, this, _1));
+  ndn::Name actionsFolder = ndn::Name(m_PREFIX_INFO);
+  actionsFolder.append("actions").append("folder");
 
+  ndn::Name actionsFile = ndn::Name(m_PREFIX_INFO);
+  actionsFile.append("actions").append("file");
 
-  //TODO below
+  actionsFolderId = m_ndn.setInterestFilter (ndn::InterestFilter(actionsFolder), bind(&StateServer::info_actions_folder, this, _1));
+  actionsFileId = m_ndn.setInterestFilter (ndn::InterestFilter(actionsFile), bind(&StateServer::info_actions_file, this, _1));
+
+  ndn::Name filesFolder = ndn::Name(m_PREFIX_INFO);
+  filesFolder.append("files").append("folder");
+
+  ndn::Name restoreFile = ndn::Name(m_PREFIX_CMD);
+  restoreFile.append("restore").append("file");
+
   // <PREFIX_INFO>/"filestate"/"all"/<segment>
-  m_ccnx->setInterestFilter (Name (m_PREFIX_INFO)("files")("folder"), bind(&StateServer::info_files_folder, this, _1));
+  filesFolderId = m_ndn.setInterestFilter (ndn::InterestFilter(filesFolder), bind(&StateServer::info_files_folder, this, _1));
 
   // <PREFIX_CMD>/"restore"/"file"/<one-component-relative-file-name>/<version>/<file-hash>
-  m_ccnx->setInterestFilter (Name (m_PREFIX_CMD)("restore")("file"), bind(&StateServer::cmd_restore_file, this, _1));
+  restoreFileId = m_ndn.setInterestFilter (ndn::InterestFilter(restoreFile), bind(&StateServer::cmd_restore_file, this, _1));
 }
 
 void
 StateServer::deregisterPrefixes ()
 {
-  m_ccnx->clearInterestFilter (Name (m_PREFIX_INFO)("actions")("folder"));
-  m_ccnx->clearInterestFilter (Name (m_PREFIX_INFO)("actions")("file"));
-  m_ccnx->clearInterestFilter (Name (m_PREFIX_INFO)("files")("folder"));
-  m_ccnx->clearInterestFilter (Name (m_PREFIX_CMD) ("restore")("file"));
-
-  //TODO: below
-  //m_ndn.setInterestFilter (....) ???
+  m_ndn.unsetInterestFilter (actionsFolderId);
+  m_ndn.unsetInterestFilter (actionsFileId);
+  m_ndn.unsetInterestFilter (filesFolderId);
+  m_ndn.unsetInterestFilter (restoreFileId);
 }
 
 void
@@ -181,7 +187,7 @@ StateServer::formatActionJson (json_spirit::Array &actions,
 }
 
 void
-StateServer::info_actions_folder (const Name &interest)
+StateServer::info_actions_folder (const ndn::Name &interest)
 {
   if (interest.size () - m_PREFIX_INFO.size () != 3 &&
       interest.size () - m_PREFIX_INFO.size () != 4)
@@ -195,7 +201,7 @@ StateServer::info_actions_folder (const Name &interest)
 }
 
 void
-StateServer::info_actions_file (const Name &interest)
+StateServer::info_actions_file (const ndn::Name &interest)
 {
   if (interest.size () - m_PREFIX_INFO.size () != 3 &&
       interest.size () - m_PREFIX_INFO.size () != 4)
@@ -214,69 +220,69 @@ StateServer::info_actions_fileOrFolder_Execute (const ndn::Name &interest, bool 
 {
   // <PREFIX_INFO>/"actions"/"folder|file"/<folder|file>/<offset>  get list of all actions
 
-  try
-    {
-      int offset = interest.getCompFromBackAsInt (0);
 
-      /// @todo !!! add security checking
+	if (interest.size () < 1) {
+		// ignore any unexpected interests and errors
+		_LOG_ERROR ("empty interest name");
+		return;
+	}
 
-      string fileOrFolderName;
-      if (interest.size () - m_PREFIX_INFO.size () == 4)
-        fileOrFolderName = interest.getCompFromBackAsString (1);
-      else // == 3
-        fileOrFolderName = "";
-/*
- *   {
- *      "actions": [
- *           ...
- *      ],
- *
- *      // only if there are more actions available
- *      "more": "<NDN-NAME-OF-NEXT-SEGMENT-OF-ACTION>"
- *   }
- */
+	uint64_t offset = interest.get (-1).toNumber ();
 
-      using namespace json_spirit;
-      Object json;
+	/// @todo !!! add security checking
 
-      Array actions;
-      bool more;
-      if (isFolder)
-        {
-          more = m_actionLog->LookupActionsInFolderRecursively
-            (boost::bind (StateServer::formatActionJson, boost::ref(actions), _1, _2, _3),
-             fileOrFolderName, offset*10, 10);
-        }
-      else
-        {
-          more = m_actionLog->LookupActionsForFile
-            (boost::bind (StateServer::formatActionJson, boost::ref(actions), _1, _2, _3),
-             fileOrFolderName, offset*10, 10);
-        }
+	string fileOrFolderName;
+	if (interest.size () - m_PREFIX_INFO.size () == 4)
+		fileOrFolderName = interest.get (-2).toUri ();
+	else // == 3
+		fileOrFolderName = "";
+	/*
+	 *   {
+	 *      "actions": [
+	 *           ...
+	 *      ],
+	 *
+	 *      // only if there are more actions available
+	 *      "more": "<NDN-NAME-OF-NEXT-SEGMENT-OF-ACTION>"
+	 *   }
+	 */
 
-      json.push_back (Pair ("actions", actions));
+	using namespace json_spirit;
+	Object json;
 
-      if (more)
-        {
-          json.push_back (Pair ("more", lexical_cast<string> (offset + 1)));
-          // Ccnx::Name more = Name (interest.getPartialName (0, interest.size () - 1))(offset + 1);
-          // json.push_back (Pair ("more", lexical_cast<string> (more)));
-        }
+	Array actions;
+	bool more;
+	if (isFolder)
+	{
+		more = m_actionLog->LookupActionsInFolderRecursively
+				(boost::bind (StateServer::formatActionJson, boost::ref(actions), _1, _2, _3),
+						fileOrFolderName, offset*10, 10);
+	}
+	else
+	{
+		more = m_actionLog->LookupActionsForFile
+				(boost::bind (StateServer::formatActionJson, boost::ref(actions), _1, _2, _3),
+						fileOrFolderName, offset*10, 10);
+	}
 
-      ostringstream os;
-      write_stream (Value (json), os, pretty_print | raw_utf8);
+	json.push_back (Pair ("actions", actions));
 
-      ndn::Data data;
-      data.setName(interest);
-      data.setFreshnessPeriod(1);
-      data.setContent(reinterpret_cast<const uint8_t*>(os.str ()), sizeof(os.str ())); //TODO does the sizeof() work here?
-      m_ndn.put(data);
-    }
-  catch (Ccnx::NameException &ne) //TODO
-    {
-      // ignore any unexpected interests and errors
-      _LOG_ERROR (*boost::get_error_info<Ccnx::error_info_str>(ne)); //TODO
-    }
+	if (more)
+	{
+		json.push_back (Pair ("more", lexical_cast<string> (offset + 1)));
+		// Ccnx::Name more = Name (interest.getPartialName (0, interest.size () - 1))(offset + 1);
+		// json.push_back (Pair ("more", lexical_cast<string> (more)));
+	}
+
+	ostringstream os;
+	write_stream (Value (json), os, pretty_print | raw_utf8);
+
+	ndn::Data data;
+	data.setName(interest);
+	data.setFreshnessPeriod(1);
+	data.setContent(reinterpret_cast<const uint8_t*>(os.str ()), strlen(os.str ()));
+	m_ndn.put(data);
+
 }
 
 void
@@ -355,15 +361,19 @@ void
 StateServer::info_files_folder_Execute (const ndn::Name &interest)
 {
   // <PREFIX_INFO>/"filestate"/"folder"/<one-component-relative-folder-name>/<offset>
-  try
-    {
-      int offset = interest.getCompFromBackAsInt (0);
+	  if (interest.size () < 1) {
+	  		// ignore any unexpected interests and errors
+	  		_LOG_ERROR ("empty interest name");
+	  		return;
+	  	}
+
+      uint64_t offset = interest.get (-1).toNumber ();
 
       // /// @todo !!! add security checking
 
       string folder;
       if (interest.size () - m_PREFIX_INFO.size () == 4)
-        folder = interest.getCompFromBackAsString (1);
+    	folder = interest.get (-2).toUri ();
       else // == 3
         folder = "";
 
@@ -403,13 +413,8 @@ StateServer::info_files_folder_Execute (const ndn::Name &interest)
       ndn::Data data;
       data.setName(interest);
       data.setFreshnessPeriod(1);
-      data.setContent(reinterpret_cast<const uint8_t*>(os.str ()), sizeof(os.str ())); //TODO does the sizeof() work here?
+      data.setContent(reinterpret_cast<const uint8_t*>(os.str ()), strlen(os.str ()));
       m_ndn.put(data);
-    }
-  catch (Ccnx::NameException &ne) //TODO
-    {
-      // ignore any unexpected interests and errors
-      _LOG_ERROR (*boost::get_error_info<Ccnx::error_info_str>(ne)); //TODO
     }
 }
 
@@ -431,118 +436,111 @@ StateServer::cmd_restore_file (const ndn::Name &interest)
 void
 StateServer::cmd_restore_file_Execute (const ndn::Name &interest)
 {
-  // <PREFIX_CMD>/"restore"/"file"/<one-component-relative-file-name>/<version>/<file-hash>
+	// <PREFIX_CMD>/"restore"/"file"/<one-component-relative-file-name>/<version>/<file-hash>
 
-  /// @todo !!! add security checking
+	/// @todo !!! add security checking
 
-  try
-    {
-      FileItemPtr file;
+	FileItemPtr file;
 
-      if (interest.size () - m_PREFIX_CMD.size () == 5)
-        {
-          Hash hash (head(interest.getCompFromBack (0)), interest.getCompFromBack (0).size());
-          int64_t version = interest.getCompFromBackAsInt (1);
-          string  filename = interest.getCompFromBackAsString (2); // should be safe even with full relative path
+	if (interest.size () - m_PREFIX_CMD.size () == 5)
+	{
+		Hash hash (head(interest.getCompFromBack (0)), interest.getCompFromBack (0).size());
+		Hash hash (interest.get (-1).wire (), interest.get (-1).size ());
+		uint64_t version = interest.get (-2).toNumber ();
+		string  filename = interest.get (-3).toUri (); // should be safe even with full relative path
 
-          file = m_actionLog->LookupAction (filename, version, hash);
-          if (!file)
-            {
-              _LOG_ERROR ("Requested file is not found: [" << filename << "] version [" << version << "] hash [" << hash.shortHash () << "]");
-            }
-        }
-      else
-        {
-          int64_t version = interest.getCompFromBackAsInt (0);
-          string  filename = interest.getCompFromBackAsString (1); // should be safe even with full relative path
+		file = m_actionLog->LookupAction (filename, version, hash);
+		if (!file)
+		{
+			_LOG_ERROR ("Requested file is not found: [" << filename << "] version [" << version << "] hash [" << hash.shortHash () << "]");
+		}
+	}
+	else
+	{
 
-          file = m_actionLog->LookupAction (filename, version, Hash (0,0));
-          if (!file)
-            {
-              _LOG_ERROR ("Requested file is not found: [" << filename << "] version [" << version << "]");
-            }
-        }
+		uint64_t version = interest.get (-1).toNumber ();
+		string  filename = interest.get (-2).toUri (); // should be safe even with full relative path
 
-      if (!file)
-        {
-    	  //TODO correct?
-          ndn::Data data;
-          data.setName(interest);
-          data.setFreshnessPeriod(1);
-          string msg = "FAIL: Requested file is not found";
-          data.setContent(reinterpret_cast<const uint8_t*>(msg), strlen(msg));
-          m_ndn.put(data);
-          return;
-        }
+		file = m_actionLog->LookupAction (filename, version, Hash (0,0));
+		if (!file)
+		{
+			_LOG_ERROR ("Requested file is not found: [" << filename << "] version [" << version << "]");
+		}
+	}
 
-      Hash hash = Hash (file->file_hash ().c_str (), file->file_hash ().size ());
+	if (!file)
+	{
+		ndn::Data data;
+		data.setName(interest);
+		data.setFreshnessPeriod(1);
+		string msg = "FAIL: Requested file is not found";
+		data.setContent(reinterpret_cast<const uint8_t*>(msg), strlen(msg));
+		m_ndn.put(data);
+		return;
+	}
 
-      ///////////////////
-      // now the magic //
-      ///////////////////
+	Hash hash = Hash (file->file_hash ().c_str (), file->file_hash ().size ());
 
-      boost::filesystem::path filePath = m_rootDir / file->filename ();
-      Name deviceName (file->device_name ().c_str (), file->device_name ().size ());
+	///////////////////
+	// now the magic //
+	///////////////////
 
-      try
-        {
-          if (filesystem::exists (filePath) &&
-              filesystem::last_write_time (filePath) == file->mtime () &&
+	boost::filesystem::path filePath = m_rootDir / file->filename ();
+	ndn::Name deviceName = ndn::Name(file->device_name ().c_str ()).getSubName(0, file->device_name ().size ());
+
+	try
+	{
+		if (filesystem::exists (filePath) &&
+				filesystem::last_write_time (filePath) == file->mtime () &&
 #if BOOST_VERSION >= 104900
-              filesystem::status (filePath).permissions () == static_cast<filesystem::perms> (file->mode ()) &&
+				filesystem::status (filePath).permissions () == static_cast<filesystem::perms> (file->mode ()) &&
 #endif
-              *Hash::FromFileContent (filePath) == hash)
-            {
-        	  ndn::Data data;
-              data.setName(interest);
-              data.setFreshnessPeriod(1);
-              string msg = "OK: File already exists";
-              data.setContent(reinterpret_cast<const uint8_t*>(msg), strlen(msg));
-              m_ndn.put(data);
+				*Hash::FromFileContent (filePath) == hash)
+		{
+			ndn::Data data;
+			data.setName(interest);
+			data.setFreshnessPeriod(1);
+			string msg = "OK: File already exists";
+			data.setContent(reinterpret_cast<const uint8_t*>(msg), strlen(msg));
+			m_ndn.put(data);
 
-              _LOG_DEBUG ("Asking to assemble a file, but file already exists on a filesystem");
-              return;
-            }
-        }
-      catch (filesystem::filesystem_error &error)
-        {
-          ndn::Data data;
-          data.setName(interest);
-          data.setFreshnessPeriod(1);
-          string msg = "FAIL: File operation failed";
-          data.setContent(reinterpret_cast<const uint8_t*>(msg), strlen(msg));
-          m_ndn.put(data);
+			_LOG_DEBUG ("Asking to assemble a file, but file already exists on a filesystem");
+			return;
+		}
+	}
+	catch (filesystem::filesystem_error &error)
+	{
+		ndn::Data data;
+		data.setName(interest);
+		data.setFreshnessPeriod(1);
+		string msg = "FAIL: File operation failed";
+		data.setContent(reinterpret_cast<const uint8_t*>(msg), strlen(msg));
+		m_ndn.put(data);
 
-          _LOG_ERROR ("File operations failed on [" << filePath << "] (ignoring)");
-        }
+		_LOG_ERROR ("File operations failed on [" << filePath << "] (ignoring)");
+	}
 
-      _LOG_TRACE ("Restoring file [" << filePath << "]");
-      if (m_objectManager.objectsToLocalFile (deviceName, hash, filePath))
-        {
-          last_write_time (filePath, file->mtime ());
+	_LOG_TRACE ("Restoring file [" << filePath << "]");
+	if (m_objectManager.objectsToLocalFile (deviceName, hash, filePath))
+	{
+		last_write_time (filePath, file->mtime ());
 #if BOOST_VERSION >= 104900
-          permissions (filePath, static_cast<filesystem::perms> (file->mode ()));
+		permissions (filePath, static_cast<filesystem::perms> (file->mode ()));
 #endif
-          ndn::Data data;
-          data.setName(interest);
-          data.setFreshnessPeriod(1);
-          string msg = "OK";
-          data.setContent(reinterpret_cast<const uint8_t*>(msg), strlen(msg));
-          m_ndn.put(data);
-        }
-      else
-        {
-          ndn::Data data;
-          data.setName(interest);
-          data.setFreshnessPeriod(1);
-          string msg = "FAIL: Unknown error while restoring file";
-          data.setContent(reinterpret_cast<const uint8_t*>(msg), strlen(msg));
-          m_ndn.put(data);
-        }
-    }
-  catch (Ccnx::NameException &ne) //TODO
-    {
-      // ignore any unexpected interests and errors
-      _LOG_ERROR(*boost::get_error_info<Ccnx::error_info_str>(ne)); //TODO
-    }
+		ndn::Data data;
+		data.setName(interest);
+		data.setFreshnessPeriod(1);
+		string msg = "OK";
+		data.setContent(reinterpret_cast<const uint8_t*>(msg), strlen(msg));
+		m_ndn.put(data);
+	}
+	else
+	{
+		ndn::Data data;
+		data.setName(interest);
+		data.setFreshnessPeriod(1);
+		string msg = "FAIL: Unknown error while restoring file";
+		data.setContent(reinterpret_cast<const uint8_t*>(msg), strlen(msg));
+		m_ndn.put(data);
+	}
 }

@@ -101,7 +101,7 @@ FetchManager::Enqueue (const ndn::Name &deviceName, const ndn::Name &baseName,
   }
 
   // we may need to guarantee that LookupLocator will gives an answer and not throw exception...
-  Name forwardingHint;
+  ndn::Name forwardingHint;
   forwardingHint = m_mapping (deviceName);
 
   if (m_taskDb)
@@ -200,7 +200,7 @@ FetchManager::DidNoDataTimeout (Fetcher &fetcher)
       // will be tried initially and again after empty forwarding hint
 
       /// @todo Handle potential exception
-      Name forwardingHint;
+      ndn::Name forwardingHint;
       forwardingHint = m_mapping (fetcher.GetDeviceName ());
 
       if (forwardingHint.size () == 0)
@@ -216,7 +216,7 @@ FetchManager::DidNoDataTimeout (Fetcher &fetcher)
   else if (fetcher.GetForwardingHint () == m_broadcastHint)
     {
       // will be tried after broadcast forwarding hint
-      fetcher.SetForwardingHint (Name ("/"));
+      fetcher.SetForwardingHint (ndn::Name ("/"));
     }
   else
     {
@@ -241,7 +241,7 @@ FetchManager::DidNoDataTimeout (Fetcher &fetcher)
 }
 
 void
-FetchManager::DidFetchComplete (Fetcher &fetcher, const Name &deviceName, const Name &baseName)
+FetchManager::DidFetchComplete (Fetcher &fetcher, const ndn::Name &deviceName, const ndn::Name &baseName)
 {
   {
     unique_lock<mutex> lock (m_parellelFetchMutex);

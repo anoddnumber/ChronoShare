@@ -61,28 +61,30 @@ Dispatcher::Dispatcher(const std::string &localUserName
                                        bind (&Dispatcher::Did_ActionLog_ActionApply_Delete, this, _1));
   m_fileState = m_actionLog->GetFileState ();
 
-  Name syncPrefix = Name(BROADCAST_DOMAIN)(CHRONOSHARE_APP)(sharedFolder);
+  ndn::Name syncPrefix = ndn::Name(BROADCAST_DOMAIN);
+  syncPrefix.append(CHRONOSHARE_APP);
+  syncPrefix.append(sharedFolder);
 
   // m_server needs a different ccnx face
   m_server = new ContentServer(make_shared<Face>(), m_actionLog, rootDir, m_localUserName, m_sharedFolder, CHRONOSHARE_APP, CONTENT_FRESHNESS);
-  m_server->registerPrefix(Name("/"));
-  m_server->registerPrefix(Name(BROADCAST_DOMAIN));
+  m_server->registerPrefix(ndn::Name("/"));
+  m_server->registerPrefix(ndn::Name(BROADCAST_DOMAIN));
 
   m_stateServer = new StateServer (make_shared<Face>(), m_actionLog, rootDir, m_localUserName, m_sharedFolder, CHRONOSHARE_APP, m_objectManager, CONTENT_FRESHNESS);
   // no need to register, right now only listening on localhost prefix
 
-  m_core = new SyncCore (m_syncLog, localUserName, Name("/"), syncPrefix,
+  m_core = new SyncCore (m_syncLog, localUserName, ndn::Name("/"), syncPrefix,
                          bind(&Dispatcher::Did_SyncLog_StateChange, this, _1), face, DEFAULT_SYNC_INTEREST_INTERVAL);
 
   FetchTaskDbPtr actionTaskDb = make_shared<FetchTaskDb>(m_rootDir, "action");
   m_actionFetcher = make_shared<FetchManager> (m_ndn, bind (&SyncLog::LookupLocator, &*m_syncLog, _1),
-                                               Name(BROADCAST_DOMAIN), // no appname suffix now
+                                               ndn::Name(BROADCAST_DOMAIN), // no appname suffix now
                                                3,
                                                bind (&Dispatcher::Did_FetchManager_ActionFetch, this, _1, _2, _3, _4), FetchManager::FinishCallback(), actionTaskDb);
 
   FetchTaskDbPtr fileTaskDb = make_shared<FetchTaskDb>(m_rootDir, "file");
   m_fileFetcher  = make_shared<FetchManager> (m_ndn, bind (&SyncLog::LookupLocator, &*m_syncLog, _1),
-                                              Name(BROADCAST_DOMAIN), // no appname suffix now
+                                              ndn::Name(BROADCAST_DOMAIN), // no appname suffix now
                                               3,
                                               bind (&Dispatcher::Did_FetchManager_FileSegmentFetch, this, _1, _2, _3, _4),
                                               bind (&Dispatcher::Did_FetchManager_FileFetchComplete, this, _1, _2),
@@ -95,7 +97,12 @@ Dispatcher::Dispatcher(const std::string &localUserName
     string tag = "dispatcher" + m_localUserName.toString();
     Ccnx::CcnxDiscovery::registerCallback (TaggedFunction (bind (&Dispatcher::Did_LocalPrefix_Updated, this, _1), tag));
     //TODO: registerCallback...?
-    ndn::
+    //ndn::
+    //this registerCallback is used when the local prefix changes.
+    //the ndn-cxx library does not have this functionality
+    //thus, the application will need to implement this.
+    //send a data packet and get the local prefix. If they are different, call the callback function, else do nothing.
+
   }
 
   m_executor.start ();
@@ -138,18 +145,18 @@ Dispatcher::~Dispatcher()
 void
 Dispatcher::Did_LocalPrefix_Updated (const ndn::Name &forwardingHint)
 {
-  Name effectiveForwardingHint;
+  ndn::Name effectiveForwardingHint;
   if (m_localUserName.size () >= forwardingHint.size () &&
       m_localUserName.getPartialName (0, forwardingHint.size ()) == forwardingHint)
     {
-      effectiveForwardingHint = Name ("/"); // "directly" accesible
+      effectiveForwardingHint = ndn::Name ("/"); // "directly" accesible
     }
   else
     {
       effectiveForwardingHint = forwardingHint;
     }
 
-  Name oldLocalPrefix = m_syncLog->LookupLocalLocator ();
+  ndn::Name oldLocalPrefix = m_syncLog->LookupLocalLocator ();
 
   if (oldLocalPrefix == effectiveForwardingHint)
     {
@@ -157,8 +164,8 @@ Dispatcher::Did_LocalPrefix_Updated (const ndn::Name &forwardingHint)
       return;
     }
 
-  if (effectiveForwardingHint == Name ("/") ||
-      effectiveForwardingHint == Name (BROADCAST_DOMAIN))
+  if (effectiveForwardingHint == ndn::Name ("/") ||
+      effectiveForwardingHint == ndn::Name (BROADCAST_DOMAIN))
     {
       _LOG_DEBUG ("Basic effective prefix [" << effectiveForwardingHint << "]. Updating local prefix, but don't reregister");
       m_syncLog->UpdateLocalLocator (effectiveForwardingHint);
@@ -170,8 +177,8 @@ Dispatcher::Did_LocalPrefix_Updated (const ndn::Name &forwardingHint)
   m_server->registerPrefix(effectiveForwardingHint);
   m_syncLog->UpdateLocalLocator (effectiveForwardingHint);
 
-  if (oldLocalPrefix == Name ("/") ||
-      oldLocalPrefix == Name (BROADCAST_DOMAIN))
+  if (oldLocalPrefix == ndn::Name ("/") ||
+      oldLocalPrefix == ndn::Name (BROADCAST_DOMAIN))
     {
       _LOG_DEBUG ("Don't deregister basic prefix: " << oldLocalPrefix);
       return;
@@ -315,10 +322,11 @@ Dispatcher::Did_SyncLog_StateChange_Execute (SyncStateMsgPtr stateMsg)
     {
       uint64_t oldSeq = state.old_seq();
       uint64_t newSeq = state.seq();
-      Name userName (reinterpret_cast<const unsigned char *> (state.name ().c_str ()), state.name ().size ());
+      ndn::Name userName (reinterpret_cast<const unsigned char *> (state.name ().c_str ()));
 
       // fetch actions with oldSeq + 1 to newSeq (inclusive)
-      Name actionNameBase = Name ("/")(userName)(CHRONOSHARE_APP)("action")(m_sharedFolder);
+      ndn::Name actionNameBase = ndn::Name("/");
+      actionNameBase.append(userName).append(CHRONOSHARE_APP).append("action").append(m_sharedFolder);
 
       m_actionFetcher->Enqueue (userName, actionNameBase,
                                 std::max<uint64_t> (oldSeq + 1, 1), newSeq, FetchManager::PRIORITY_HIGH);
@@ -345,7 +353,10 @@ Dispatcher::Did_FetchManager_ActionFetch (const ndn::Name &deviceName, const ndn
     {
       Hash hash (action->file_hash ().c_str(), action->file_hash ().size ());
 
-      Name fileNameBase = Name ("/")(deviceName)(CHRONOSHARE_APP)("file")(hash.GetHash (), hash.GetHashBytes ());
+      //Name fileNameBase = Name ("/")(deviceName)(CHRONOSHARE_APP)("file")(hash.GetHash (), hash.GetHashBytes ());
+      ndn::Name fileNameBase = ndn::Name ("/");
+      fileNameBase.append(deviceName).append(CHRONOSHARE_APP).append("file");
+      fileNameBase.append((const char *) hash.GetHash ());
 
       string hashStr = lexical_cast<string> (hash);
       if (ObjectDb::DoesExist (m_rootDir / ".chronoshare",  deviceName, hashStr))
@@ -421,8 +432,9 @@ Dispatcher::Did_FetchManager_FileSegmentFetch_Execute (ndn::Name deviceName, ndn
 {
   // fileSegmentBaseName:  /<device_name>/<appname>/file/<hash>
 
-  const Bytes &hashBytes = fileSegmentBaseName.getCompFromBack (0);
-  Hash hash (head(hashBytes), hashBytes.size());
+  ndn::Component comp = fileSegmentBaseName.get (-1);
+  const ndn::Buffer &hashBytes = ndn::Buffer(comp.value (), comp.size ());
+  Hash hash (hashBytes.buf (), hashBytes.size ());
 
   _LOG_DEBUG ("Received segment deviceName: " << deviceName << ", segmentBaseName: " << fileSegmentBaseName << ", segment: " << segment);
 
@@ -455,8 +467,11 @@ Dispatcher::Did_FetchManager_FileFetchComplete_Execute (ndn::Name deviceName, nd
 
   _LOG_DEBUG ("Finished fetching " << deviceName << ", fileBaseName: " << fileBaseName);
 
-  const Bytes &hashBytes = fileBaseName.getCompFromBack (0);
-  Hash hash (head (hashBytes), hashBytes.size ());
+
+  ndn::Component comp = fileBaseName.get (-1);
+  const ndn::Buffer &hashBytes = ndn::Buffer(comp.value (), comp.size ());
+  Hash hash (hashBytes.buf (), hashBytes.size ());
+
   _LOG_DEBUG ("Extracted hash: " << hash.shortHash ());
 
   if (m_objectDbMap.find (hash) != m_objectDbMap.end())

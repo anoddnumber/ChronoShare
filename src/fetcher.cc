@@ -105,11 +105,11 @@ Fetcher::FillPipeline ()
 
       m_inActivePipeline.insert (m_minSendSeqNo+1);
 
-      _LOG_DEBUG (" >>> i " << Name (m_forwardingHint)(m_name) << ", seq = " << (m_minSendSeqNo + 1 ));
+      _LOG_DEBUG (" >>> i " << ndn::Name (m_forwardingHint).append(m_name) << ", seq = " << (m_minSendSeqNo + 1 ));
 
       // cout << ">>> " << m_minSendSeqNo+1 << endl;
 
-      ndn::Interest interest(Name (m_forwardingHint)(m_name)(m_minSendSeqNo+1), 1); // Alex: this lifetime should be changed to RTO
+      ndn::Interest interest(ndn::Name (m_forwardingHint).append(m_name).appendNumber(m_minSendSeqNo+1), 1); // Alex: this lifetime should be changed to RTO
       m_ndn.expressInterest(interest,
     		  	  	  bind(&Fetcher::OnData, this, m_minSendSeqNo+1, _1, _2),
     				  bind(&Fetcher::OnTimeout, this, m_minSendSeqNo+1, _1, _2, _3, _4));
@@ -152,7 +152,7 @@ Fetcher::OnData_Execute (uint64_t seqno, ndn::Name name, shared_ptr<ndn::Data> d
     {
       // in this case we don't care whether "data" is verified,  in fact, we expect it is unverified
       try {
-    	shared_ptr<ndn::Data> pco = make_shared<ParsedContentObject> (*data->contentPtr ());
+    	shared_ptr<ndn::Data> pco = make_shared<ndn::Data> (data->getContent ());
 
         // we need to verify this pco and apply callback only when verified
         // TODO: check verified !!!
@@ -165,7 +165,7 @@ Fetcher::OnData_Execute (uint64_t seqno, ndn::Name name, shared_ptr<ndn::Data> d
         }
         else
         {
-          _LOG_ERROR("Can not verify signature content. Name = " << pco->name());
+          _LOG_ERROR("Can not verify signature content. Name = " << pco->getName ());
           // probably needs to do more in the future
         }
       }
@@ -243,7 +243,7 @@ Fetcher::OnTimeout (uint64_t seqno, const ndn::Name &name, const OnData& onData,
 void
 Fetcher::OnTimeout_Execute (uint64_t seqno, ndn::Name name, const OnData& onData, const OnTimeout& onTimeout, ndn::Interest interest)
 {
-  _LOG_DEBUG (" <<< :( timeout " << name.getPartialName (0, name.size () - 1) << ", seq = " << seqno);
+  _LOG_DEBUG (" <<< :( timeout " << name.getSubName (0, name.size () - 1) << ", seq = " << seqno);
 
   // cout << "Fetcher::OnTimeout: " << name << endl;
   // cout << "Last: " << m_lastPositiveActivity << ", config: " << m_maximumNoActivityPeriod

@@ -69,7 +69,8 @@ ObjectManager::localFileToObjects (const fs::path &file, const ndn::Name &device
           break;
         }
 
-      Name name = Name ("/")(deviceName)(m_appName)("file")(fileHash->GetHash (), fileHash->GetHashBytes ())(segment);
+      ndn::Name name = ndn::Name("/");
+      name.append(deviceName).append(m_appName).append("file").append((char *) fileHash->GetHash (), fileHash->GetHashBytes ()).append(segment);
 
       // cout << *fileHash << endl;
       // cout << name << endl;
@@ -87,7 +88,9 @@ ObjectManager::localFileToObjects (const fs::path &file, const ndn::Name &device
     }
   if (segment == 0) // handle empty files
     {
-      Name name = Name ("/")(m_appName)("file")(fileHash->GetHash (), fileHash->GetHashBytes ())(deviceName)(0);
+      ndn::Name name = ndn::Name("/");
+      name.append(m_appName).append("file").append((char *) fileHash->GetHash (), fileHash->GetHashBytes ()).append(deviceName).appendNumber(0);
+
       //Bytes data = m_ccnx->createContentObject (name, 0, 0); //TODO, is the translation below correct?
 
       ndn::Data data;
@@ -123,11 +126,10 @@ ObjectManager::objectsToLocalFile (/*in*/const ndn::Name &deviceName, /*in*/cons
   ObjectDb fileDb (m_folder, hashStr);
 
   sqlite3_int64 segment = 0;
-  BytesPtr bytes = fileDb.fetchSegment (deviceName, 0);
+  ndn::Buffer bytes = fileDb.fetchSegment (deviceName, 0);
   while (bytes)
     {
-      ParsedContentObject obj (*bytes);
-      BytesPtr data = obj.contentPtr ();
+      ndn::BufferPtr data(bytes);
 
       if (data)
         {

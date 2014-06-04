@@ -67,9 +67,8 @@ public:
            uint64_t minSeqNo, uint64_t maxSeqNo, int priority=PRIORITY_NORMAL);
 
   // only for Fetcher
-  //TODO: what do i do here? inline ndn::Face..............GetNdn()?????
-  inline Ccnx::CcnxWrapperPtr
-  GetCcnx ();
+//  inline Ccnx::CcnxWrapperPtr
+//  GetCcnx ();
 
 private:
   // Fetch Events

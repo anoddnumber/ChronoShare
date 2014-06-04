@@ -60,7 +60,7 @@ ContentServer::~ContentServer()
   m_scheduler->shutdown ();
 
   ScopedLock lock (m_mutex);
-  for (PrefixIt forwardingHint = m_prefixes.begin(); forwardingHint != m_prefixes.end(); ++forwardingHint) //TODO does ++forwardingHint work still?
+  for (PrefixIt forwardingHint = m_prefixes.begin(); forwardingHint != m_prefixes.end(); ++forwardingHint)
   {
     m_ndn.unsetInterestFilter(*forwardingHint);
   }
@@ -94,7 +94,7 @@ ContentServer::deregisterPrefix (const RegisteredPrefixId &forwardingHint)
 
 
 void
-ContentServer::filterAndServeImpl (const ndn::Name &forwardingHint, const Name &name, const ndn::Name &interest)
+ContentServer::filterAndServeImpl (const ndn::Name &forwardingHint, const ndn::Name &name, const ndn::Name &interest)
 {
   // interest for files:   /<forwarding-hint>/<device_name>/<appname>/file/<hash>/<segment>
   // interest for actions: /<forwarding-hint>/<device_name>/<appname>/action/<shared-folder>/<action-seq>
@@ -104,16 +104,16 @@ ContentServer::filterAndServeImpl (const ndn::Name &forwardingHint, const Name &
 
   try
     {
-      if (name.size() >= 4 && name.getCompFromBackAsString (3) == m_appName)
+      if (name.size() >= 4 && name.get (-4).toUri () == m_appName)
         {
-          string type = name.getCompFromBackAsString (2);
+          string type = name.get (-3).toUri ();
           if (type == "file")
             {
               serve_File (forwardingHint, name, interest);
             }
           else if (type == "action")
             {
-              string folder = name.getCompFromBackAsString (1);
+              string folder = name.get (-2).toUri ();
               if (folder == m_sharedFolderName)
               {
                 serve_Action (forwardingHint, name, interest);
@@ -179,9 +179,9 @@ ContentServer::serve_File_Execute (const ndn::Name &forwardingHint, const ndn::N
   // interest:       /<forwarding-hint>/<device_name>/<appname>/file/<hash>/<segment>
   // name:           /<device_name>/<appname>/file/<hash>/<segment>
 
-  int64_t segment = name.getCompFromBackAsInt (0);
-  ndn::Name deviceName = name.getPartialName (0, name.size () - 4);
-  Hash hash (head(name.getCompFromBack (1)), name.getCompFromBack (1).size());
+  int64_t segment = name.get (-1).toInteger ();
+  ndn::Name deviceName = name.getSubName (0, name.size () - 4);
+  Hash hash (head(name.get (-2)), name.get (-2).size ());
 
   _LOG_DEBUG (" server FILE for device: " << deviceName << ", file_hash: " << hash.shortHash () << " segment: " << segment);
 
@@ -257,8 +257,8 @@ ContentServer::serve_Action_Execute (const ndn::Name &forwardingHint, const ndn:
   // interest:       /<forwarding-hint>/<device_name>/<appname>/action/<shared-folder>/<action-seq>
   // name for actions: /<device_name>/<appname>/action/<shared-folder>/<action-seq>
 
-  int64_t seqno = name.getCompFromBackAsInt (0);
-  ndn::Name deviceName = name.getPartialName (0, name.size () - 4);
+  int64_t seqno = name.get (-1).toInteger ();
+  ndn::Name deviceName = name.getSubName (0, name.size (0 - 4));
 
   _LOG_DEBUG (" server ACTION for device: " << deviceName << " and seqno: " << seqno);
 //DATA
@@ -274,21 +274,14 @@ ContentServer::serve_Action_Execute (const ndn::Name &forwardingHint, const ndn:
           const Block &block = dataObject->getContent ();
           const ndn::Buffer &content = block->value_begin (); //TODO: ...is this correct...?
 
+          ndn::Data data;
+          data.setName(interest);
           if (m_freshness > 0)
-            {
-              ndn::Data data;
-			  data.setName(interest);
-			  data.setFreshnessPeriod(m_freshness);
-			  data.setContent(content.buf (), content.size());
-			  m_ndn.put(data);
-            }
-          else
-            {
-              ndn::Data data;
-              data.setName(interest);
-              data.setContent(content.buf (), content.size());
-              m_ndn.put(data);
-            }
+          {
+        	  data.setFreshnessPeriod(m_freshness);
+          }
+          data.setContent(content.buf (), content.size());
+          m_ndn.put(data);
         }
     }
   else

@@ -90,9 +90,9 @@ ObjectDb::DoesExist (const boost::filesystem::path &folder, const ndn::Name &dev
       sqlite3_stmt *stmt;
       sqlite3_prepare_v2 (db, "SELECT count(*), count(nullif(content_object,0)) FROM File WHERE device_name=?", -1, &stmt, 0);
 
-      ndn::Buffer buf = ndn::Buffer(&(deviceName.toUri().front()), deviceName.size()); //TODO correct?
+      const ndn::Block block = deviceName.wireEncode();
 
-      sqlite3_bind_blob (stmt, 1, buf->buf (), buf->length (), SQLITE_TRANSIENT);
+      sqlite3_bind_blob (stmt, 1, block.value (), block.size (), SQLITE_TRANSIENT);
 
       int res = sqlite3_step (stmt);
       if (res == SQLITE_ROW)
@@ -138,8 +138,9 @@ ObjectDb::saveContentObject (const ndn::Name &deviceName, sqlite3_int64 segment,
 
   //_LOG_DEBUG ("Saving content object for [" << deviceName << ", seqno: " << segment << ", size: " << data.size () << "]");
 
-  ndn::Buffer buf = ndn::Buffer(&(deviceName.toUri().front()), deviceName.size()); //TODO correct?
-  sqlite3_bind_blob (stmt, 1, buf->buf (), buf->length (), SQLITE_STATIC);
+  ndn::Block buf = deviceName.wireEncode ();
+
+  sqlite3_bind_blob (stmt, 1, buf.wire (), buf->size (), SQLITE_STATIC);
   sqlite3_bind_int64 (stmt, 2, segment);
   sqlite3_bind_blob (stmt, 3, data->buf (), data.size (), SQLITE_STATIC);
 
@@ -151,19 +152,18 @@ ObjectDb::saveContentObject (const ndn::Name &deviceName, sqlite3_int64 segment,
   m_lastUsed = time(NULL);
 }
 
-//ndn::Buffer
-Ccnx::BytesPtr //TODO make it return a Buffer instead of a BytesPtr (???)
+ndn::BufferPtr
 ObjectDb::fetchSegment (const ndn::Name &deviceName, sqlite3_int64 segment)
 {
   sqlite3_stmt *stmt;
   sqlite3_prepare_v2 (m_db, "SELECT content_object FROM File WHERE device_name=? AND segment=?", -1, &stmt, 0);
 
-  CcnxCharbufPtr buf = deviceName.toCcnxCharbuf (); //TODO
-  sqlite3_bind_blob (stmt, 1, buf->buf (), buf->length (), SQLITE_TRANSIENT);
+  const ndn::Block buf = deviceName.wireEncode ();
+
+  sqlite3_bind_blob (stmt, 1, buf.value (), buf.size (), SQLITE_TRANSIENT);
   sqlite3_bind_int64 (stmt, 2, segment);
 
-  BytesPtr ret;
-  //ndn::Buffer ret;
+  ndn::BufferPtr ret;
 
   int res = sqlite3_step (stmt);
   if (res == SQLITE_ROW)
@@ -171,7 +171,7 @@ ObjectDb::fetchSegment (const ndn::Name &deviceName, sqlite3_int64 segment)
       const unsigned char *buf = reinterpret_cast<const unsigned char*> (sqlite3_column_blob (stmt, 0));
       int bufBytes = sqlite3_column_bytes (stmt, 0);
 
-      ret = make_shared<Bytes> (buf, buf+bufBytes);
+      ret = make_shared<ndn::Buffer> (buf->buf (), buf->+bufBytes); //TODO incorrect?
 
     }
 
