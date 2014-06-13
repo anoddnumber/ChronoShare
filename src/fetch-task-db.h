@@ -24,6 +24,7 @@
 #include <sqlite3.h>
 #include <boost/filesystem.hpp>
 #include <boost/shared_ptr.hpp>
+#include <ndn-cxx/name.hpp>
 
 class FetchTaskDb
 {

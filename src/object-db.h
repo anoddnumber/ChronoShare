@@ -28,6 +28,7 @@
 #include <boost/shared_ptr.hpp>
 #include <ctime>
 #include <vector>
+#include <ndn-cxx/name.hpp>
 
 class ObjectDb
 {
@@ -37,9 +38,9 @@ public:
   ~ObjectDb ();
 
   void
-  saveContentObject (const ndn::Name &deviceName, sqlite3_int64 segment, const ndn::Buffer &data);
+  saveContentObject (const ndn::Name &deviceName, sqlite3_int64 segment, const ndn::Block &data);
 
-  ndn::Buffer
+  ndn::BufferPtr
   fetchSegment (const ndn::Name &deviceName, sqlite3_int64 segment);
 
   // sqlite3_int64

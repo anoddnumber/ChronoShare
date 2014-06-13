@@ -38,8 +38,8 @@ namespace fs = boost::filesystem;
 
 const int MAX_FILE_SEGMENT_SIZE = 1024;
 
-ObjectManager::ObjectManager (ndn::Face face, const fs::path &folder, const std::string &appName)
-  : m_ndn (face)
+ObjectManager::ObjectManager (const fs::path &folder, const std::string &appName)
+  : m_ndn ()
   , m_folder (folder / ".chronoshare")
   , m_appName (appName)
 {
@@ -70,36 +70,35 @@ ObjectManager::localFileToObjects (const fs::path &file, const ndn::Name &device
         }
 
       ndn::Name name = ndn::Name("/");
-      name.append(deviceName).append(m_appName).append("file").append((char *) fileHash->GetHash (), fileHash->GetHashBytes ()).append(segment);
+      name.append(deviceName).append(m_appName).append("file").append(reinterpret_cast<const uint8_t*> (fileHash->GetHash ()), fileHash->GetHashBytes ()).appendNumber(segment);
 
       // cout << *fileHash << endl;
       // cout << name << endl;
       //_LOG_DEBUG ("Read " << iff.gcount () << " from " << file << " for segment " << segment);
 
       ndn::Data data;
-	  data.setName(name);
-	  data.setFreshnessPeriod(iff.gcount ());
-	  data.setContent(buf, sizeof(buf));
-	  m_ndn.put(data);
+      data.setName(name);
+      data.setFreshnessPeriod(time::seconds(60));
+      data.setContent(reinterpret_cast<const uint8_t*>(&buf), sizeof(buf));
+      m_ndn->put(data);
 
-      fileDb.saveContentObject (deviceName, segment, data);
+      fileDb.saveContentObject (deviceName, segment, data.getContent ());
 
       segment ++;
     }
   if (segment == 0) // handle empty files
     {
       ndn::Name name = ndn::Name("/");
-      name.append(m_appName).append("file").append((char *) fileHash->GetHash (), fileHash->GetHashBytes ()).append(deviceName).appendNumber(0);
-
-      //Bytes data = m_ccnx->createContentObject (name, 0, 0); //TODO, is the translation below correct?
+      name.append(m_appName);
+      name.append("file").append(reinterpret_cast<const uint8_t *> (fileHash->GetHash ()), fileHash->GetHashBytes ()).append(deviceName).appendNumber(0);
 
       ndn::Data data;
-	  data.setName(name);
-	  data.setFreshnessPeriod(0);
-	  data.setContent(0, 0);
-	  m_ndn.put(data);
+      data.setName(name);
+      data.setFreshnessPeriod(time::seconds(0));
+      data.setContent(0, 0);
+      m_ndn->put(data);
 
-      fileDb.saveContentObject (deviceName, 0, data);
+      fileDb.saveContentObject (deviceName, 0, data.getContent ());
 
       segment ++;
     }
@@ -126,14 +125,13 @@ ObjectManager::objectsToLocalFile (/*in*/const ndn::Name &deviceName, /*in*/cons
   ObjectDb fileDb (m_folder, hashStr);
 
   sqlite3_int64 segment = 0;
-  ndn::Buffer bytes = fileDb.fetchSegment (deviceName, 0);
+  ndn::BufferPtr bytes = fileDb.fetchSegment (deviceName, 0);
   while (bytes)
     {
-      ndn::BufferPtr data(bytes);
 
-      if (data)
+      if (bytes->buf ())
         {
-          off.write (reinterpret_cast<const char*> (head(*data)), data->size());
+          off.write (reinterpret_cast<const char*> (bytes->buf ()), bytes->size ());
         }
 
       segment ++;

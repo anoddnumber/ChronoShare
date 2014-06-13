@@ -13,7 +13,7 @@ def options(opt):
     if Utils.unversioned_sys_platform () == "darwin":
         opt.add_option('--auto-update', action='store_true',default=False,dest='autoupdate',help='''(OSX) Download sparkle framework and enable autoupdate feature''')
 
-    opt.load('compiler_c compiler_cxx boost ccnx protoc qt4 gnu_dirs')
+    opt.load('compiler_c compiler_cxx boost protoc qt4 gnu_dirs')
     opt.load('tinyxml', tooldir=['waf-tools'])
 
 def configure(conf):
@@ -119,8 +119,6 @@ def configure(conf):
         conf.check_cfg(package='liblog4cxx', args=['--cflags', '--libs'], uselib_store='LOG4CXX', mandatory=True)
         conf.define ("HAVE_LOG4CXX", 1)
 
-    conf.load ('ccnx')
-
     conf.load('protoc')
 
     conf.load('qt4')
@@ -134,8 +132,9 @@ def configure(conf):
         Logs.error ("Minumum required boost version is 1.46")
         return
 
-    conf.check_ccnx (path=conf.options.ccnx_dir)
-    conf.define ('CCNX_PATH', conf.env.CCNX_ROOT)
+    conf.check_cfg(package='libndn-cxx', args=['--cflags', '--libs'], uselib_store='NDN_CXX', mandatory=True)
+#    conf.check_ccnx (path=conf.options.ccnx_dir)
+#    conf.define ('CCNX_PATH', conf.env.CCNX_ROOT)
 
     if conf.options._test:
         conf.define ('_TESTS', 1)
@@ -160,30 +159,30 @@ def build (bld):
         includes = "scheduler executor src",
         )
 
-    libccnx = bld (
-        target="ccnx",
-        features=['cxx'],
-        source = bld.path.ant_glob(['ccnx/**/*.cc', 'ccnx/**/*.cpp']),
-        use = 'TINYXML BOOST BOOST_THREAD SSL CCNX LOG4CXX scheduler executor',
-        includes = "ccnx src scheduler executor",
-        )
+#    libccnx = bld (
+#        target="ccnx",
+#        features=['cxx'],
+#        source = bld.path.ant_glob(['ccnx/**/*.cc', 'ccnx/**/*.cpp']),
+#        use = 'TINYXML BOOST BOOST_THREAD SSL CCNX LOG4CXX scheduler executor',
+#        includes = "ccnx src scheduler executor",
+#        )
 
-    adhoc = bld (
-        target = "adhoc",
-        features=['cxx'],
-        includes = "ccnx src",
-    )
-    if Utils.unversioned_sys_platform () == "darwin":
-        adhoc.mac_app = True
-        adhoc.source = 'adhoc/adhoc-osx.mm'
-        adhoc.use = "BOOST BOOST_THREAD BOOST_DATE_TIME LOG4CXX OSX_FOUNDATION OSX_COREWLAN"
+#    adhoc = bld (
+#        target = "adhoc",
+#        features=['cxx'],
+#        includes = "ccnx src",
+#    )
+#    if Utils.unversioned_sys_platform () == "darwin":
+#        adhoc.mac_app = True
+#        adhoc.source = 'adhoc/adhoc-osx.mm'
+#        adhoc.use = "BOOST BOOST_THREAD BOOST_DATE_TIME LOG4CXX OSX_FOUNDATION OSX_COREWLAN"
 
-    chornoshare = bld (
+    chronoshare = bld (
         target="chronoshare",
         features=['cxx'],
         source = bld.path.ant_glob(['src/**/*.cc', 'src/**/*.cpp', 'src/**/*.proto']),
-        use = "BOOST BOOST_FILESYSTEM BOOST_DATE_TIME SQLITE3 LOG4CXX scheduler ccnx",
-        includes = "ccnx scheduler src executor",
+        use = "BOOST BOOST_FILESYSTEM BOOST_DATE_TIME SQLITE3 LOG4CXX scheduler ndn",
+        includes = "scheduler src executor",
         )
 
     fs_watcher = bld (
@@ -192,7 +191,7 @@ def build (bld):
         defines = "WAF",
         source = bld.path.ant_glob(['fs-watcher/*.cc']),
         use = "SQLITE3 LOG4CXX scheduler executor QTCORE",
-        includes = "fs-watcher scheduler executor src ccnx",
+        includes = "fs-watcher scheduler executor src",
         )
 
     # Unit tests
@@ -202,8 +201,8 @@ def build (bld):
           features = "qt4 cxx cxxprogram",
           defines = "WAF",
           source = bld.path.ant_glob(['test/*.cc']),
-          use = 'BOOST_TEST BOOST_FILESYSTEM BOOST_DATE_TIME LOG4CXX SQLITE3 QTCORE QTGUI ccnx database fs_watcher chronoshare',
-          includes = "ccnx scheduler src executor gui fs-watcher",
+          use = 'BOOST_TEST BOOST_FILESYSTEM BOOST_DATE_TIME LOG4CXX SQLITE3 QTCORE QTGUI database fs_watcher chronoshare',
+          includes = "scheduler src executor gui fs-watcher",
           install_prefix = None,
           )
 
@@ -214,14 +213,14 @@ def build (bld):
           includes = "server src .",
           use = "BOOST QTCORE"
           )
-
+"""
     qt = bld (
         target = "ChronoShare",
         features = "qt4 cxx cxxprogram html_resources",
         defines = "WAF",
         source = bld.path.ant_glob(['gui/*.cpp', 'gui/*.cc', 'gui/images.qrc']),
-        includes = "ccnx scheduler executor fs-watcher gui src adhoc server . ",
-        use = "BOOST BOOST_FILESYSTEM BOOST_DATE_TIME SQLITE3 QTCORE QTGUI LOG4CXX fs_watcher ccnx database chronoshare http_server",
+        includes = "scheduler executor fs-watcher gui src adhoc server . ",
+        use = "BOOST BOOST_FILESYSTEM BOOST_DATE_TIME SQLITE3 QTCORE QTGUI LOG4CXX fs_watcher database chronoshare http_server",
 
         html_resources = bld.path.find_dir ("gui/html").ant_glob([
                 '**/*.js', '**/*.png', '**/*.css',
@@ -283,18 +282,18 @@ def build (bld):
 	features = "qt4 cxx cxxprogram",
 	defines = "WAF",
 	source = "cmd/csd.cc",
-	includes = "ccnx scheduler executor gui fs-watcher src . ",
-	use = "BOOST BOOST_FILESYSTEM BOOST_DATE_TIME SQLITE3 QTCORE QTGUI LOG4CXX fs_watcher ccnx database chronoshare"
+	includes = "scheduler executor gui fs-watcher src . ",
+	use = "BOOST BOOST_FILESYSTEM BOOST_DATE_TIME SQLITE3 QTCORE QTGUI LOG4CXX fs_watcher database chronoshare"
 	)
 
     dump_db = bld (
         target = "dump-db",
         features = "cxx cxxprogram",
 	source = "cmd/dump-db.cc",
-	includes = "ccnx scheduler executor gui fs-watcher src . ",
-	use = "BOOST BOOST_FILESYSTEM BOOST_DATE_TIME SQLITE3 QTCORE LOG4CXX fs_watcher ccnx database chronoshare"
+	includes = "scheduler executor gui fs-watcher src . ",
+	use = "BOOST BOOST_FILESYSTEM BOOST_DATE_TIME SQLITE3 QTCORE LOG4CXX fs_watcher database chronoshare"
         )
-
+"""
 from waflib import TaskGen
 @TaskGen.extension('.mm')
 def m_hook(self, node):

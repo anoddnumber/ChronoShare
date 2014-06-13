@@ -81,7 +81,7 @@ FileState::UpdateFile (const std::string &filename, sqlite3_int64 version,
                       "file_seg_num=? "
                       "WHERE type=0 AND filename=?", -1, &stmt, 0);
 
-  sqlite3_bind_blob  (stmt, 1, device_name.buf (), device_name.length (), SQLITE_STATIC);
+  sqlite3_bind_blob  (stmt, 1, device_name.buf (), device_name.size (), SQLITE_STATIC);
   sqlite3_bind_int64 (stmt, 2, seq_no);
   sqlite3_bind_int64 (stmt, 3, version);
   sqlite3_bind_blob  (stmt, 4, hash.GetHash (), hash.GetHashBytes (), SQLITE_STATIC);
@@ -112,7 +112,7 @@ FileState::UpdateFile (const std::string &filename, sqlite3_int64 version,
 
       sqlite3_bind_text  (stmt, 1, filename.c_str (), -1, SQLITE_STATIC);
       sqlite3_bind_int64 (stmt, 2, version);
-      sqlite3_bind_blob  (stmt, 3, device_name.buf (), device_name.length (), SQLITE_STATIC);
+      sqlite3_bind_blob  (stmt, 3, device_name.buf (), device_name.size (), SQLITE_STATIC);
       sqlite3_bind_int64 (stmt, 4, seq_no);
       sqlite3_bind_blob  (stmt, 5, hash.GetHash (), hash.GetHashBytes (), SQLITE_STATIC);
       sqlite3_bind_int64 (stmt, 6, atime);
@@ -188,7 +188,7 @@ FileState::LookupFile (const std::string &filename)
   FileItemPtr retval;
   if (sqlite3_step (stmt) == SQLITE_ROW)
   {
-    retval = make_shared<FileItem> ();
+    retval = boost::make_shared<FileItem> ();
     retval->set_filename    (reinterpret_cast<const char *> (sqlite3_column_text  (stmt, 0)), sqlite3_column_bytes (stmt, 0));
     retval->set_version     (sqlite3_column_int64 (stmt, 1));
     retval->set_device_name (sqlite3_column_blob  (stmt, 2), sqlite3_column_bytes (stmt, 2));
@@ -217,7 +217,7 @@ FileState::LookupFilesForHash (const Hash &hash)
   sqlite3_bind_blob(stmt, 1, hash.GetHash (), hash.GetHashBytes (), SQLITE_STATIC);
   _LOG_DEBUG_COND (sqlite3_errcode (m_db) != SQLITE_OK, sqlite3_errmsg (m_db));
 
-  FileItemsPtr retval = make_shared<FileItems> ();
+  FileItemsPtr retval = boost::make_shared<FileItems> ();
   while (sqlite3_step (stmt) == SQLITE_ROW)
     {
       FileItem file;
@@ -281,7 +281,7 @@ FileState::LookupFilesInFolder (const boost::function<void (const FileItem&)> &v
 FileItemsPtr
 FileState::LookupFilesInFolder (const std::string &folder, int offset/*=0*/, int limit/*=-1*/)
 {
-  FileItemsPtr retval = make_shared<FileItems> ();
+  FileItemsPtr retval = boost::make_shared<FileItems> ();
   LookupFilesInFolder (boost::bind (&FileItems::push_back, retval.get (), _1), folder, offset, limit);
 
   return retval;
@@ -358,7 +358,7 @@ FileState::LookupFilesInFolderRecursively (const boost::function<void (const Fil
 FileItemsPtr
 FileState::LookupFilesInFolderRecursively (const std::string &folder, int offset/*=0*/, int limit/*=-1*/)
 {
-  FileItemsPtr retval = make_shared<FileItems> ();
+  FileItemsPtr retval = boost::make_shared<FileItems> ();
   LookupFilesInFolder (boost::bind (&FileItems::push_back, retval.get (), _1), folder, offset, limit);
 
   return retval;

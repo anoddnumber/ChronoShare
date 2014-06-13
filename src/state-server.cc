@@ -35,13 +35,13 @@ using namespace ndn;
 using namespace std;
 using namespace boost;
 
-StateServer::StateServer(ndn::Face face, ActionLogPtr actionLog,
+StateServer::StateServer(ActionLogPtr actionLog,
                          const boost::filesystem::path &rootDir,
                          const ndn::Name &userName, const std::string &sharedFolderName,
                          const std::string &appName,
                          ObjectManager &objectManager,
                          int freshness/* = -1*/)
-  : m_ndn(face)
+  : m_ndn()
   , m_actionLog(actionLog)
   , m_objectManager (objectManager)
   , m_rootDir(rootDir)
@@ -87,8 +87,8 @@ StateServer::registerPrefixes ()
   ndn::Name actionsFile = ndn::Name(m_PREFIX_INFO);
   actionsFile.append("actions").append("file");
 
-  actionsFolderId = m_ndn.setInterestFilter (ndn::InterestFilter(actionsFolder), bind(&StateServer::info_actions_folder, this, _1));
-  actionsFileId = m_ndn.setInterestFilter (ndn::InterestFilter(actionsFile), bind(&StateServer::info_actions_file, this, _1));
+  actionsFolderId = m_ndn->setInterestFilter (ndn::InterestFilter(actionsFolder), bind(&StateServer::info_actions_folder, this, _1));
+  actionsFileId = m_ndn->setInterestFilter (ndn::InterestFilter(actionsFile), bind(&StateServer::info_actions_file, this, _1));
 
   ndn::Name filesFolder = ndn::Name(m_PREFIX_INFO);
   filesFolder.append("files").append("folder");
@@ -97,19 +97,19 @@ StateServer::registerPrefixes ()
   restoreFile.append("restore").append("file");
 
   // <PREFIX_INFO>/"filestate"/"all"/<segment>
-  filesFolderId = m_ndn.setInterestFilter (ndn::InterestFilter(filesFolder), bind(&StateServer::info_files_folder, this, _1));
+  filesFolderId = m_ndn->setInterestFilter (ndn::InterestFilter(filesFolder), bind(&StateServer::info_files_folder, this, _1));
 
   // <PREFIX_CMD>/"restore"/"file"/<one-component-relative-file-name>/<version>/<file-hash>
-  restoreFileId = m_ndn.setInterestFilter (ndn::InterestFilter(restoreFile), bind(&StateServer::cmd_restore_file, this, _1));
+  restoreFileId = m_ndn->setInterestFilter (ndn::InterestFilter(restoreFile), bind(&StateServer::cmd_restore_file, this, _1));
 }
 
 void
 StateServer::deregisterPrefixes ()
 {
-  m_ndn.unsetInterestFilter (actionsFolderId);
-  m_ndn.unsetInterestFilter (actionsFileId);
-  m_ndn.unsetInterestFilter (filesFolderId);
-  m_ndn.unsetInterestFilter (restoreFileId);
+  m_ndn->unsetInterestFilter (actionsFolderId);
+  m_ndn->unsetInterestFilter (actionsFileId);
+  m_ndn->unsetInterestFilter (filesFolderId);
+  m_ndn->unsetInterestFilter (restoreFileId);
 }
 
 void
@@ -176,7 +176,7 @@ StateServer::formatActionJson (json_spirit::Array &actions,
   if (action.has_parent_device_name ())
     {
       Object parentId;
-      ndn::Name parent_device_name (action.parent_device_name ().c_str (), action.parent_device_name ().size ());
+      ndn::Name parent_device_name (action.parent_device_name ());
       id.push_back (Pair ("userName", boost::lexical_cast<string> (parent_device_name)));
       id.push_back (Pair ("seqNo",    action.parent_seq_no ()));
 
@@ -279,9 +279,9 @@ StateServer::info_actions_fileOrFolder_Execute (const ndn::Name &interest, bool 
 
 	ndn::Data data;
 	data.setName(interest);
-	data.setFreshnessPeriod(1);
-	data.setContent(reinterpret_cast<const uint8_t*>(os.str ()), strlen(os.str ()));
-	m_ndn.put(data);
+	data.setFreshnessPeriod(time::seconds(60));
+	data.setContent(reinterpret_cast<const uint8_t*>(os.str ().c_str ()), os.str ().size ());
+	m_ndn->put(data);
 
 }
 
@@ -318,7 +318,7 @@ StateServer::formatFilestateJson (json_spirit::Array &files, const FileItem &fil
   json.push_back (Pair ("version",   file.version ()));
   {
     Object owner;
-    ndn::Name device_name (file.device_name ().c_str (), file.device_name ().size ());
+    ndn::Name device_name (file.device_name ());
     owner.push_back (Pair ("userName", boost::lexical_cast<string> (device_name)));
     owner.push_back (Pair ("seqNo",    file.seq_no ()));
 
@@ -412,10 +412,9 @@ StateServer::info_files_folder_Execute (const ndn::Name &interest)
 
       ndn::Data data;
       data.setName(interest);
-      data.setFreshnessPeriod(1);
-      data.setContent(reinterpret_cast<const uint8_t*>(os.str ()), strlen(os.str ()));
-      m_ndn.put(data);
-    }
+      data.setFreshnessPeriod(time::seconds(60));
+      data.setContent(reinterpret_cast<const uint8_t*>(os.str ().c_str ()), os.str ().size ());
+      m_ndn->put(data);
 }
 
 
@@ -444,7 +443,6 @@ StateServer::cmd_restore_file_Execute (const ndn::Name &interest)
 
 	if (interest.size () - m_PREFIX_CMD.size () == 5)
 	{
-		Hash hash (head(interest.getCompFromBack (0)), interest.getCompFromBack (0).size());
 		Hash hash (interest.get (-1).wire (), interest.get (-1).size ());
 		uint64_t version = interest.get (-2).toNumber ();
 		string  filename = interest.get (-3).toUri (); // should be safe even with full relative path
@@ -472,10 +470,10 @@ StateServer::cmd_restore_file_Execute (const ndn::Name &interest)
 	{
 		ndn::Data data;
 		data.setName(interest);
-		data.setFreshnessPeriod(1);
+		data.setFreshnessPeriod(time::seconds(60));
 		string msg = "FAIL: Requested file is not found";
-		data.setContent(reinterpret_cast<const uint8_t*>(msg), strlen(msg));
-		m_ndn.put(data);
+		data.setContent(reinterpret_cast<const uint8_t*>(msg.c_str ()), msg.size ());
+		m_ndn->put(data);
 		return;
 	}
 
@@ -499,10 +497,10 @@ StateServer::cmd_restore_file_Execute (const ndn::Name &interest)
 		{
 			ndn::Data data;
 			data.setName(interest);
-			data.setFreshnessPeriod(1);
+			data.setFreshnessPeriod(time::seconds(60));
 			string msg = "OK: File already exists";
-			data.setContent(reinterpret_cast<const uint8_t*>(msg), strlen(msg));
-			m_ndn.put(data);
+			data.setContent(reinterpret_cast<const uint8_t*>(msg.c_str ()), msg.size ());
+			m_ndn->put(data);
 
 			_LOG_DEBUG ("Asking to assemble a file, but file already exists on a filesystem");
 			return;
@@ -512,10 +510,10 @@ StateServer::cmd_restore_file_Execute (const ndn::Name &interest)
 	{
 		ndn::Data data;
 		data.setName(interest);
-		data.setFreshnessPeriod(1);
+		data.setFreshnessPeriod(time::seconds(60));
 		string msg = "FAIL: File operation failed";
-		data.setContent(reinterpret_cast<const uint8_t*>(msg), strlen(msg));
-		m_ndn.put(data);
+		data.setContent(reinterpret_cast<const uint8_t*>(msg.c_str ()), msg.size ());
+		m_ndn->put(data);
 
 		_LOG_ERROR ("File operations failed on [" << filePath << "] (ignoring)");
 	}
@@ -529,18 +527,18 @@ StateServer::cmd_restore_file_Execute (const ndn::Name &interest)
 #endif
 		ndn::Data data;
 		data.setName(interest);
-		data.setFreshnessPeriod(1);
+		data.setFreshnessPeriod(time::seconds(60));
 		string msg = "OK";
-		data.setContent(reinterpret_cast<const uint8_t*>(msg), strlen(msg));
-		m_ndn.put(data);
+		data.setContent(reinterpret_cast<const uint8_t*>(msg.c_str ()), msg.size ());
+		m_ndn->put(data);
 	}
 	else
 	{
 		ndn::Data data;
 		data.setName(interest);
-		data.setFreshnessPeriod(1);
+		data.setFreshnessPeriod(time::seconds(60));
 		string msg = "FAIL: Unknown error while restoring file";
-		data.setContent(reinterpret_cast<const uint8_t*>(msg), strlen(msg));
-		m_ndn.put(data);
+		data.setContent(reinterpret_cast<const uint8_t*>(msg.c_str ()), msg.size ());
+		m_ndn->put(data);
 	}
 }

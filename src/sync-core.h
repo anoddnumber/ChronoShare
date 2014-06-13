@@ -23,11 +23,11 @@
 #define SYNC_CORE_H
 
 #include "sync-log.h"
-#include "face.hpp"
 #include "scheduler.h"
 #include "task.h"
 
 #include <boost/function.hpp>
+#include <ndn-cxx/face.hpp>
 
 class SyncCore
 {
@@ -45,8 +45,7 @@ public:
            , const ndn::Name &localPrefix      // routable name used by the local user
            , const ndn::Name &syncPrefix       // the prefix for the sync collection
            , const StateMsgCallback &callback   // callback when state change is detected
-           , ndn::Face face
-           , double syncInterestInterval = -1.0);
+           , long syncInterestInterval = -1);
   ~SyncCore();
 
   void
@@ -77,16 +76,16 @@ private:
   handleInterest(const ndn::Name &name);
 
   void
-  handleSyncData(const ndn::Name &name, shared_ptr<ndn::Data> content);
+  handleSyncData(const ndn::Interest &interest, ndn::Data &data);
 
   void
-  handleRecoverData(const ndn::Name &name, shared_ptr<ndn::Data> content);
+  handleRecoverData(const ndn::Interest &interest, ndn::Data &data);
 
   void
-  handleSyncInterestTimeout(const ndn::Name &name, const OnData& onData, const OnTimeout& onTimeout);
+  handleSyncInterestTimeout(const ndn::Interest &interest);
 
   void
-  handleRecoverInterestTimeout(const ndn::Name &name, const OnData& onData, const OnTimeout& onTimeout);
+  handleRecoverInterestTimeout(const ndn::Interest &interest);
 
   void
   deregister(const ndn::Name &name);
@@ -107,8 +106,11 @@ private:
   void
   handleStateData(const ndn::Buffer &content);
 
+  void
+  on_set_interest_filter_failed ();
+
 private:
-  Ndn::Face m_ndn;
+  boost::shared_ptr<ndn::Face> m_ndn;
 
   SyncLogPtr m_log;
   SchedulerPtr m_scheduler;
@@ -121,7 +123,7 @@ private:
 
   TaskPtr m_sendSyncInterestTask;
 
-  double m_syncInterestInterval;
+  long m_syncInterestInterval;
 };
 
 #endif // SYNC_CORE_H

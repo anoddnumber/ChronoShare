@@ -26,6 +26,7 @@
 #include <sync-state.pb.h>
 #include <map>
 #include <boost/thread/shared_mutex.hpp>
+#include <ndn-cxx/name.hpp>
 
 typedef boost::shared_ptr<SyncStateMsg> SyncStateMsgPtr;
 

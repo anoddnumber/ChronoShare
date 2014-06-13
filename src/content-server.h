@@ -29,13 +29,12 @@
 #include <boost/thread/shared_mutex.hpp>
 #include <boost/thread/locks.hpp>
 #include "scheduler.h"
-
-struct RegisteredPrefixId;
+#include <ndn-cxx/face.hpp>
 
 class ContentServer
 {
 public:
-  ContentServer(ndn::Face face, ActionLogPtr actionLog, const boost::filesystem::path &rootDir,
+  ContentServer(ActionLogPtr actionLog, const boost::filesystem::path &rootDir,
                 const ndn::Name &userName, const std::string &sharedFolderName, const std::string &appName,
                 int freshness = -1);
   ~ContentServer();
@@ -45,7 +44,8 @@ public:
   // currently /topology-independent-name must begin with /action or /file
   // so that ContentServer knows where to look for the content object
   void registerPrefix(const ndn::Name &prefix);
-  void deregisterPrefix(const ndn::Name &prefix);
+  void deregisterPrefix(const ndn::RegisteredPrefixId &forwardingHint);
+  void deregisterPrefix(const ndn::Name &forwardingHint);
 
 private:
 
@@ -74,13 +74,14 @@ private:
   flushStaleDbCache();
 
 private:
-  ndn::Face m_ndn; //should this be a shared_ptr<Face> instead??
+  shared_ptr<ndn::Face> m_ndn;
   ActionLogPtr m_actionLog;
   typedef boost::shared_mutex Mutex;
 
   typedef boost::unique_lock<Mutex> ScopedLock;
-  typedef std::set<RegisteredPrefixId>::iterator PrefixIt;
-  std::set<RegisteredPrefixId> m_prefixes;
+  typedef std::set<ndn::RegisteredPrefixId>::iterator PrefixIt;
+  //std::set<boost::tuple<ndn::Name, ndn::RegisteredPrefixId> > m_prefixes; //TODO
+  std::set<ndn::Name> m_prefixes;
   Mutex m_mutex;
   boost::filesystem::path m_dbFolder;
   int m_freshness;

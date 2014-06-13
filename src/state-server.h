@@ -151,7 +151,7 @@
 class StateServer
 {
 public:
-  StateServer(ndn::Face face, ActionLogPtr actionLog, const boost::filesystem::path &rootDir,
+  StateServer(ActionLogPtr actionLog, const boost::filesystem::path &rootDir,
               const ndn::Name &userName, const std::string &sharedFolderName, const std::string &appName,
               ObjectManager &objectManager,
               int freshness = -1);
@@ -193,17 +193,17 @@ private:
   formatFilestateJson (json_spirit::Array &files, const FileItem &file);
 
 private:
-  ndn::Face m_ndn;
+  boost::shared_ptr<ndn::Face> m_ndn;
   ActionLogPtr m_actionLog;
   ObjectManager &m_objectManager;
 
   ndn::Name m_PREFIX_INFO;
   ndn::Name m_PREFIX_CMD;
 
-  RegisteredPrefixId* actionsFolderId;
-  RegisteredPrefixId* actionsFileId;
-  RegisteredPrefixId* filesFolderId;
-  RegisteredPrefixId* restoreFileId;
+  const ndn::InterestFilterId* actionsFolderId;
+  const ndn::InterestFilterId* actionsFileId;
+  const ndn::InterestFilterId* filesFolderId;
+  const ndn::InterestFilterId* restoreFileId;
 
   boost::filesystem::path m_rootDir;
   int m_freshness;

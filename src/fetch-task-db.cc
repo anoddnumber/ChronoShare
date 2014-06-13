@@ -118,11 +118,11 @@ FetchTaskDb::foreachTask(const FetchTaskCallback &callback)
   sqlite3_prepare_v2(m_db, "SELECT * FROM Task;", -1, &stmt, 0);
   while (sqlite3_step(stmt) == SQLITE_ROW)
   {
-     ndn::Name deviceName(sqlite3_column_blob(stmt, 0));
-     deviceName.append(sqlite3_column_bytes(stmt, 0));
+     ndn::Name deviceName(reinterpret_cast<const char*>(sqlite3_column_blob(stmt, 0)));
+     deviceName.append(reinterpret_cast<const char*>(sqlite3_column_bytes(stmt, 0)));
 
-     ndn::Name baseName(sqlite3_column_blob(stmt, 1))
-     baseName.append(sqlite3_column_bytes(stmt, 1));
+     ndn::Name baseName(reinterpret_cast<const char*>(sqlite3_column_blob(stmt, 1)));
+     baseName.append(reinterpret_cast<const char*>(sqlite3_column_bytes(stmt, 1)));
 
      uint64_t minSeqNo = sqlite3_column_int64(stmt, 2);
      uint64_t maxSeqNo = sqlite3_column_int64(stmt, 3);

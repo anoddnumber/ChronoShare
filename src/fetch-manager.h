@@ -44,10 +44,9 @@ public:
     };
 
   typedef boost::function<ndn::Name(const ndn::Name &)> Mapping;
-  typedef boost::function<void(ndn::Name &deviceName, ndn::Name &baseName, uint64_t seq, shared_ptr<ndn::Data> pco)> SegmentCallback;
+  typedef boost::function<void(ndn::Name &deviceName, ndn::Name &baseName, uint64_t seq, boost::shared_ptr<ndn::Data> pco)> SegmentCallback;
   typedef boost::function<void(ndn::Name &deviceName, ndn::Name &baseName)> FinishCallback;
-  FetchManager (face::Face face,
-                const Mapping &mapping,
+  FetchManager (const Mapping &mapping,
                 const ndn::Name &broadcastForwardingHint,
                 uint32_t parallelFetches = 3,
                 const SegmentCallback &defaultSegmentCallback = SegmentCallback(),
@@ -74,7 +73,7 @@ private:
   // Fetch Events
   void
   DidDataSegmentFetched (Fetcher &fetcher, uint64_t seqno, const ndn::Name &basename,
-                         const ndn::Name &name, shared_ptr<ndn::Data> data);
+                         const ndn::Name &name, boost::shared_ptr<ndn::Data> data);
 
   void
   DidNoDataTimeout (Fetcher &fetcher);
@@ -88,8 +87,11 @@ private:
   void
   TimedWait (Fetcher &fetcher);
 
+  inline boost::shared_ptr<ndn::Face>
+  GetNdn ();
+
 private:
-  ndn::Face m_ndn;
+  boost::shared_ptr<ndn::Face> m_ndn;
   Mapping m_mapping;
 
   uint32_t m_maxParallelFetches;
@@ -112,7 +114,7 @@ private:
   const ndn::Name m_broadcastHint;
 };
 
-ndn::Face
+boost::shared_ptr<ndn::Face>
 FetchManager::GetNdn ()
 {
 	return m_ndn;

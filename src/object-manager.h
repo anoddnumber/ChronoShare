@@ -26,13 +26,14 @@
 #include <hash-helper.h>
 #include <boost/filesystem.hpp>
 #include <boost/tuple/tuple.hpp>
+#include <ndn-cxx/face.hpp>
 
 // everything related to managing object files
 
 class ObjectManager
 {
 public:
-  ObjectManager (ndn::Face face, const boost::filesystem::path &folder, const std::string &appName);
+  ObjectManager (const boost::filesystem::path &folder, const std::string &appName);
   virtual ~ObjectManager ();
 
   /**
@@ -47,7 +48,7 @@ public:
   objectsToLocalFile (/*in*/const ndn::Name &deviceName, /*in*/const Hash &hash, /*out*/ const boost::filesystem::path &file);
 
 private:
-  ndn::Face m_ndn;
+  boost::shared_ptr<ndn::Face> m_ndn;
   boost::filesystem::path m_folder;
   std::string m_appName;
 };

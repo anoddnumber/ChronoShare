@@ -49,7 +49,6 @@ public:
   Dispatcher(const std::string &localUserName
              , const std::string &sharedFolder
              , const boost::filesystem::path &rootDir
-             , ndn::Face face
              , bool enablePrefixDiscovery = true
              );
   ~Dispatcher();
@@ -112,7 +111,7 @@ private:
   Did_SyncLog_StateChange_Execute (SyncStateMsgPtr stateMsg);
 
   void
-  Did_FetchManager_ActionFetch (const ndn::Name &deviceName, const ndn::Name &actionName, uint32_t seqno, shared_ptr<ndn::Data> actionPco);
+  Did_FetchManager_ActionFetch (const ndn::Name &deviceName, const ndn::Name &actionName, uint32_t seqno, boost::shared_ptr<ndn::Data> actionPco);
 
   void
   Did_ActionLog_ActionApply_Delete (const std::string &filename);
@@ -125,10 +124,10 @@ private:
   //                                        HashPtr hash, time_t m_time, int mode, int seg_num);
 
   void
-  Did_FetchManager_FileSegmentFetch (const ndn::Name &deviceName, const ndn::Name &fileSegmentName, uint32_t segment, shared_ptr<ndn::Data> fileSegmentPco);
+  Did_FetchManager_FileSegmentFetch (const ndn::Name &deviceName, const ndn::Name &fileSegmentName, uint32_t segment, boost::shared_ptr<ndn::Data> fileSegmentPco);
 
   void
-  Did_FetchManager_FileSegmentFetch_Execute (ndn::Name deviceName, ndn::Name fileSegmentName, uint32_t segment, shared_ptr<ndn::Data> fileSegmentPco);
+  Did_FetchManager_FileSegmentFetch_Execute (ndn::Name deviceName, ndn::Name fileSegmentName, uint32_t segment, boost::shared_ptr<ndn::Data> fileSegmentPco);
 
   void
   Did_FetchManager_FileFetchComplete (const ndn::Name &deviceName, const ndn::Name &fileBaseName);
@@ -159,7 +158,7 @@ private:
   // fileReady(const Ccnx::Name &fileNamePrefix);
 
 private:
-  ndn::Face m_ndn;
+  boost::shared_ptr<ndn::Face> m_ndn;
   SyncCore *m_core;
   SyncLogPtr   m_syncLog;
   ActionLogPtr m_actionLog;

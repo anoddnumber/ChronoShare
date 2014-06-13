@@ -26,21 +26,21 @@
 #include <boost/intrusive/list.hpp>
 #include <boost/date_time/posix_time/posix_time_types.hpp>
 #include <set>
-
-#include <set>
+#include <ndn-cxx/name.hpp>
+#include <ndn-cxx/data.hpp>
+#include <ndn-cxx/face.hpp>
 
 class FetchManager;
 
 class Fetcher
 {
 public:
-  typedef boost::function<void(ndn::Name &deviceName, ndn::Name &baseName, uint64_t seq, shared_ptr<ndn::Data> pco)> SegmentCallback;
-  typedef boost::function<void(ndn::Name &deviceName, ndn::Name &baseName)> FinishCallback;
+  typedef boost::function<void (ndn::Name &deviceName, ndn::Name &baseName, uint64_t seq, boost::shared_ptr<ndn::Data> pco)> SegmentCallback;
+  typedef boost::function<void (ndn::Name &deviceName, ndn::Name &baseName)> FinishCallback;
   typedef boost::function<void (Fetcher &, const ndn::Name &deviceName, const ndn::Name &baseName)> OnFetchCompleteCallback;
   typedef boost::function<void (Fetcher &)> OnFetchFailedCallback;
 
-  Fetcher (ndn::Face face,
-           ExecutorPtr executor,
+  Fetcher (ExecutorPtr executor,
            const SegmentCallback &segmentCallback, // callback passed by caller of FetchManager
            const FinishCallback &finishCallback, // callback passed by caller of FetchManager
            OnFetchCompleteCallback onFetchComplete, OnFetchFailedCallback onFetchFailed, // callbacks provided by FetchManager
@@ -88,22 +88,22 @@ private:
   FillPipeline ();
 
   void
-  OnData (uint64_t seqno, const ndn::Name &name, shared_ptr<ndn::Data> data);
+  OnData (uint64_t seqno, const ndn::Interest &interest, ndn::Data &data);
 
   void
-  OnData_Execute (uint64_t seqno, ndn::Name name, shared_ptr<ndn::Data> data);
+  OnData_Execute (uint64_t seqno, const ndn::Interest &interest, ndn::Data &data);
 
   void
-  OnTimeout (uint64_t seqno, const ndn::Name &name, const OnData& onData, const OnTimeout& onTimeout, ndn::Interest interest);
+  OnTimeout (uint64_t seqno, const ndn::Interest &interest);
 
   void
-  OnTimeout_Execute (uint64_t seqno, ndn::Name name, const OnData& onData, const OnTimeout& onTimeout, ndn::Interest interest);
+  OnTimeout_Execute (uint64_t seqno, const ndn::Interest &interest);
 
 public:
   boost::intrusive::list_member_hook<> m_managerListHook;
 
 private:
-  ndn::Face m_ndn;
+  boost::shared_ptr<ndn::Face> m_ndn;
 
   SegmentCallback m_segmentCallback;
   OnFetchCompleteCallback m_onFetchComplete;

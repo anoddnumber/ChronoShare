@@ -34,16 +34,14 @@ using namespace boost;
 using namespace std;
 using namespace ndn;
 
-Fetcher::Fetcher (ndn::Face face,
-                  ExecutorPtr executor,
+Fetcher::Fetcher (ExecutorPtr executor,
                   const SegmentCallback &segmentCallback,
                   const FinishCallback &finishCallback,
                   OnFetchCompleteCallback onFetchComplete, OnFetchFailedCallback onFetchFailed,
                   const ndn::Name &deviceName, const ndn::Name &name, int64_t minSeqNo, int64_t maxSeqNo,
                   boost::posix_time::time_duration timeout/* = boost::posix_time::seconds (30)*/,
                   const ndn::Name &forwardingHint/* = ndn::Name ()*/)
-  : m_ndn (face)
-
+  : m_ndn ()
   , m_segmentCallback (segmentCallback)
   , m_onFetchComplete (onFetchComplete)
   , m_onFetchFailed (onFetchFailed)
@@ -95,7 +93,7 @@ Fetcher::FillPipeline ()
 {
   for (; m_minSendSeqNo < m_maxSeqNo && m_activePipeline < m_pipeline; m_minSendSeqNo++)
     {
-      unique_lock<mutex> lock (m_seqNoMutex);
+      boost::unique_lock<boost::mutex> lock (m_seqNoMutex);
 
       if (m_outOfOrderRecvSeqNo.find (m_minSendSeqNo+1) != m_outOfOrderRecvSeqNo.end ())
         continue;
@@ -109,10 +107,10 @@ Fetcher::FillPipeline ()
 
       // cout << ">>> " << m_minSendSeqNo+1 << endl;
 
-      ndn::Interest interest(ndn::Name (m_forwardingHint).append(m_name).appendNumber(m_minSendSeqNo+1), 1); // Alex: this lifetime should be changed to RTO
-      m_ndn.expressInterest(interest,
+      ndn::Interest interest(ndn::Name (m_forwardingHint).append(m_name).appendNumber(m_minSendSeqNo+1), time::seconds(1)); // Alex: this lifetime should be changed to RTO
+      m_ndn->expressInterest(interest,
     		  	  	  bind(&Fetcher::OnData, this, m_minSendSeqNo+1, _1, _2),
-    				  bind(&Fetcher::OnTimeout, this, m_minSendSeqNo+1, _1, _2, _3, _4));
+    				  bind(&Fetcher::OnTimeout, this, m_minSendSeqNo+1, _1));
 
       _LOG_DEBUG (" >>> i ok");
 
@@ -121,29 +119,33 @@ Fetcher::FillPipeline ()
 }
 
 void
-Fetcher::OnData (uint64_t seqno, const ndn::Name &name, shared_ptr<ndn::Data> data)
+Fetcher::OnData (uint64_t seqno, const ndn::Interest &interest, ndn::Data &data)
 {
-  m_executor->execute (bind (&Fetcher::OnData_Execute, this, seqno, name, data));
+  m_executor->execute (bind (&Fetcher::OnData_Execute, this, seqno, interest, data));
 }
 
 void
-Fetcher::OnData_Execute (uint64_t seqno, ndn::Name name, shared_ptr<ndn::Data> data)
+Fetcher::OnData_Execute (uint64_t seqno, const ndn::Interest &interest, ndn::Data &data)
 {
+  const ndn::Name &name = data.getName ();
   _LOG_DEBUG (" <<< d " << name.getPartialName (0, name.size () - 1) << ", seq = " << seqno);
 
-  if (m_forwardingHint == Name ())
+
+  boost::shared_ptr<ndn::Data> pco = boost::make_shared<ndn::Data> (data.getContent ());
+
+  if (m_forwardingHint == ndn::Name ())
   {
     // TODO: check verified!!!!
     if (true)
     {
       if (!m_segmentCallback.empty ())
       {
-        m_segmentCallback (m_deviceName, m_name, seqno, data);
+        m_segmentCallback (m_deviceName, m_name, seqno, pco);
       }
     }
     else
     {
-      _LOG_ERROR("Can not verify signature content. Name = " << data->name());
+      _LOG_ERROR("Can not verify signature content. Name = " << name);
       // probably needs to do more in the future
     }
     // we don't have to tell FetchManager about this
@@ -151,37 +153,28 @@ Fetcher::OnData_Execute (uint64_t seqno, ndn::Name name, shared_ptr<ndn::Data> d
   else
     {
       // in this case we don't care whether "data" is verified,  in fact, we expect it is unverified
-      try {
-    	shared_ptr<ndn::Data> pco = make_shared<ndn::Data> (data->getContent ());
 
-        // we need to verify this pco and apply callback only when verified
-        // TODO: check verified !!!
-        if (true)
-        {
-          if (!m_segmentCallback.empty ())
-            {
-              m_segmentCallback (m_deviceName, m_name, seqno, pco);
-            }
-        }
-        else
-        {
-          _LOG_ERROR("Can not verify signature content. Name = " << pco->getName ());
-          // probably needs to do more in the future
-        }
+      // we need to verify this pco and apply callback only when verified
+      // TODO: check verified !!!
+      if (true)
+      {
+        if (!m_segmentCallback.empty ())
+          {
+            m_segmentCallback (m_deviceName, m_name, seqno, pco);
+          }
       }
-      catch (MisformedContentObjectException &e)
-        {
-          cerr << "MisformedContentObjectException..." << endl;
-          // no idea what should do...
-          // let's ignore for now
-        }
+      else
+      { 
+        _LOG_ERROR("Can not verify signature content. Name = " << pco->getName ());
+        // probably needs to do more in the future
+      }
     }
 
   m_activePipeline --;
   m_lastPositiveActivity = date_time::second_clock<boost::posix_time::ptime>::universal_time();
 
   ////////////////////////////////////////////////////////////////////////////
-  unique_lock<mutex> lock (m_seqNoMutex);
+  boost::unique_lock<boost::mutex> lock (m_seqNoMutex);
 
   m_outOfOrderRecvSeqNo.insert (seqno);
   m_inActivePipeline.erase (seqno);
@@ -224,7 +217,7 @@ Fetcher::OnData_Execute (uint64_t seqno, ndn::Name name, shared_ptr<ndn::Data> d
       if (!m_onFetchComplete.empty ())
         {
           m_timedwait = true;
-          m_executor->execute (bind (m_onFetchComplete, ref(*this), m_deviceName, m_name));
+          m_executor->execute (bind (m_onFetchComplete, boost::ref(*this), m_deviceName, m_name));
         }
     }
   else
@@ -234,15 +227,16 @@ Fetcher::OnData_Execute (uint64_t seqno, ndn::Name name, shared_ptr<ndn::Data> d
 }
 
 void
-Fetcher::OnTimeout (uint64_t seqno, const ndn::Name &name, const OnData& onData, const OnTimeout& onTimeout, ndn::Interest interest)
+Fetcher::OnTimeout (uint64_t seqno, const ndn::Interest &interest)
 {
   _LOG_DEBUG (this << ", " << m_executor.get ());
-  m_executor->execute (bind (&Fetcher::OnTimeout_Execute, this, seqno, name, onData, onTimeout, interest));
+  m_executor->execute (bind (&Fetcher::OnTimeout_Execute, this, seqno, interest));
 }
 
 void
-Fetcher::OnTimeout_Execute (uint64_t seqno, ndn::Name name, const OnData& onData, const OnTimeout& onTimeout, ndn::Interest interest)
+Fetcher::OnTimeout_Execute (uint64_t seqno, const ndn::Interest &interest)
 {
+  const ndn::Name name = interest.getName ();
   _LOG_DEBUG (" <<< :( timeout " << name.getSubName (0, name.size () - 1) << ", seq = " << seqno);
 
   // cout << "Fetcher::OnTimeout: " << name << endl;
@@ -255,7 +249,7 @@ Fetcher::OnTimeout_Execute (uint64_t seqno, ndn::Name name, const OnData& onData
     {
       bool done = false;
       {
-        unique_lock<mutex> lock (m_seqNoMutex);
+        boost::unique_lock<boost::mutex> lock (m_seqNoMutex);
         m_inActivePipeline.erase (seqno);
         m_activePipeline --;
 
@@ -268,7 +262,7 @@ Fetcher::OnTimeout_Execute (uint64_t seqno, ndn::Name name, const OnData& onData
       if (done)
         {
           {
-            unique_lock<mutex> lock (m_seqNoMutex);
+            boost::unique_lock<boost::mutex> lock (m_seqNoMutex);
             _LOG_DEBUG ("Telling that fetch failed");
             _LOG_DEBUG ("Active pipeline size should be zero: " << m_inActivePipeline.size ());
           }
@@ -276,7 +270,7 @@ Fetcher::OnTimeout_Execute (uint64_t seqno, ndn::Name name, const OnData& onData
           m_active = false;
           if (!m_onFetchFailed.empty ())
             {
-              m_onFetchFailed (ref (*this));
+              m_onFetchFailed (boost::ref (*this));
             }
           // this is not valid anymore, but we still should be able finish work
         }
@@ -284,6 +278,7 @@ Fetcher::OnTimeout_Execute (uint64_t seqno, ndn::Name name, const OnData& onData
   else
     {
       _LOG_DEBUG ("Asking to reexpress seqno: " << seqno);
-      m_ndn.expressInterest(interest, bind(&onData, this, _1, _2), bind(&onTimeout, this, _1); //TODO: correct? confused on how bind works
+      m_ndn->expressInterest(interest, bind(&Fetcher::OnData, this, seqno+1, _1, _2), //TODO: correct? do we pass in seqno+1?
+                                       bind(&Fetcher::OnTimeout, this, seqno+1, _1)); //TODO: correct? do we pass in seqno+1?
     }
 }

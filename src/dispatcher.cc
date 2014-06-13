@@ -25,6 +25,7 @@
 
 #include <boost/make_shared.hpp>
 #include <boost/lexical_cast.hpp>
+#include <ndn-cxx/name-component.hpp>
 
 using namespace ndn;
 using namespace std;
@@ -41,21 +42,20 @@ const static double DEFAULT_SYNC_INTEREST_INTERVAL = 10.0; // seconds;
 Dispatcher::Dispatcher(const std::string &localUserName
                        , const std::string &sharedFolder
                        , const filesystem::path &rootDir
-                       , ndn::Face face
                        , bool enablePrefixDiscovery
                        )
-           : m_ndn(face)
+           : m_ndn()
            , m_core(NULL)
            , m_rootDir(rootDir)
            , m_executor(1) // creates problems with file assembly. need to ensure somehow that FinishExectute is called after all Segment_Execute finished
-           , m_objectManager(face, rootDir, CHRONOSHARE_APP)
+           , m_objectManager(rootDir, CHRONOSHARE_APP)
            , m_localUserName(localUserName)
            , m_sharedFolder(sharedFolder)
            , m_server(NULL)
            , m_enablePrefixDiscovery(enablePrefixDiscovery)
 {
-  m_syncLog = make_shared<SyncLog>(m_rootDir, localUserName);
-  m_actionLog = make_shared<ActionLog>(m_ndn, m_rootDir, m_syncLog, sharedFolder, CHRONOSHARE_APP,
+  m_syncLog = boost::make_shared<SyncLog>(m_rootDir, localUserName);
+  m_actionLog = boost::make_shared<ActionLog>(m_ndn, m_rootDir, m_syncLog, sharedFolder, CHRONOSHARE_APP,
                                        // bind (&Dispatcher::Did_ActionLog_ActionApply_AddOrModify, this, _1, _2, _3, _4, _5, _6, _7),
                                        ActionLog::OnFileAddedOrChangedCallback (), // don't really need this callback
                                        bind (&Dispatcher::Did_ActionLog_ActionApply_Delete, this, _1));
@@ -66,27 +66,27 @@ Dispatcher::Dispatcher(const std::string &localUserName
   syncPrefix.append(sharedFolder);
 
   // m_server needs a different ccnx face
-  m_server = new ContentServer(make_shared<Face>(), m_actionLog, rootDir, m_localUserName, m_sharedFolder, CHRONOSHARE_APP, CONTENT_FRESHNESS);
+  m_server = new ContentServer(m_actionLog, rootDir, m_localUserName, m_sharedFolder, CHRONOSHARE_APP, CONTENT_FRESHNESS);
   m_server->registerPrefix(ndn::Name("/"));
   m_server->registerPrefix(ndn::Name(BROADCAST_DOMAIN));
 
-  m_stateServer = new StateServer (make_shared<Face>(), m_actionLog, rootDir, m_localUserName, m_sharedFolder, CHRONOSHARE_APP, m_objectManager, CONTENT_FRESHNESS);
+  m_stateServer = new StateServer (m_actionLog, rootDir, m_localUserName, m_sharedFolder, CHRONOSHARE_APP, m_objectManager, CONTENT_FRESHNESS);
   // no need to register, right now only listening on localhost prefix
 
   m_core = new SyncCore (m_syncLog, localUserName, ndn::Name("/"), syncPrefix,
-                         bind(&Dispatcher::Did_SyncLog_StateChange, this, _1), face, DEFAULT_SYNC_INTEREST_INTERVAL);
+                         bind(&Dispatcher::Did_SyncLog_StateChange, this, _1), DEFAULT_SYNC_INTEREST_INTERVAL);
 
-  FetchTaskDbPtr actionTaskDb = make_shared<FetchTaskDb>(m_rootDir, "action");
-  m_actionFetcher = make_shared<FetchManager> (m_ndn, bind (&SyncLog::LookupLocator, &*m_syncLog, _1),
-                                               ndn::Name(BROADCAST_DOMAIN), // no appname suffix now
-                                               3,
-                                               bind (&Dispatcher::Did_FetchManager_ActionFetch, this, _1, _2, _3, _4), FetchManager::FinishCallback(), actionTaskDb);
+  FetchTaskDbPtr actionTaskDb = boost::make_shared<FetchTaskDb>(m_rootDir, "action");
+	  m_actionFetcher = boost::make_shared<FetchManager> (bind (&SyncLog::LookupLocator, &*m_syncLog, _1),
+						       ndn::Name(BROADCAST_DOMAIN), // no appname suffix now
+						       3,
+						       bind (&Dispatcher::Did_FetchManager_ActionFetch, this, _1, _2, _3, _4), FetchManager::FinishCallback(), actionTaskDb);
 
-  FetchTaskDbPtr fileTaskDb = make_shared<FetchTaskDb>(m_rootDir, "file");
-  m_fileFetcher  = make_shared<FetchManager> (m_ndn, bind (&SyncLog::LookupLocator, &*m_syncLog, _1),
-                                              ndn::Name(BROADCAST_DOMAIN), // no appname suffix now
-                                              3,
-                                              bind (&Dispatcher::Did_FetchManager_FileSegmentFetch, this, _1, _2, _3, _4),
+	  FetchTaskDbPtr fileTaskDb = boost::make_shared<FetchTaskDb>(m_rootDir, "file");
+	  m_fileFetcher  = boost::make_shared<FetchManager> (bind (&SyncLog::LookupLocator, &*m_syncLog, _1),
+						      ndn::Name(BROADCAST_DOMAIN), // no appname suffix now
+						      3,
+						      bind (&Dispatcher::Did_FetchManager_FileSegmentFetch, this, _1, _2, _3, _4),
                                               bind (&Dispatcher::Did_FetchManager_FileFetchComplete, this, _1, _2),
                                               fileTaskDb);
 
@@ -94,8 +94,8 @@ Dispatcher::Dispatcher(const std::string &localUserName
   if (m_enablePrefixDiscovery)
   {
     _LOG_DEBUG("registering prefix discovery in Dispatcher");
-    string tag = "dispatcher" + m_localUserName.toString();
-    Ccnx::CcnxDiscovery::registerCallback (TaggedFunction (bind (&Dispatcher::Did_LocalPrefix_Updated, this, _1), tag));
+    string tag = "dispatcher" + m_localUserName.toUri();
+    //Ccnx::CcnxDiscovery::registerCallback (TaggedFunction (bind (&Dispatcher::Did_LocalPrefix_Updated, this, _1), tag));
     //TODO: registerCallback...?
     //ndn::
     //this registerCallback is used when the local prefix changes.
@@ -118,9 +118,8 @@ Dispatcher::~Dispatcher()
   if (m_enablePrefixDiscovery)
   {
     _LOG_DEBUG("deregistering prefix discovery in Dispatcher");
-    string tag = "dispatcher" + m_localUserName.toString();
-    Ccnx::CcnxDiscovery::deregisterCallback (TaggedFunction (bind (&Dispatcher::Did_LocalPrefix_Updated, this, _1), tag));
-    //TODO!! ?!?!
+    string tag = "dispatcher" + m_localUserName.toUri();
+    //Ccnx::CcnxDiscovery::deregisterCallback (TaggedFunction (bind (&Dispatcher::Did_LocalPrefix_Updated, this, _1), tag));//TODO fix
   }
 
   if (m_core != NULL)
@@ -147,7 +146,7 @@ Dispatcher::Did_LocalPrefix_Updated (const ndn::Name &forwardingHint)
 {
   ndn::Name effectiveForwardingHint;
   if (m_localUserName.size () >= forwardingHint.size () &&
-      m_localUserName.getPartialName (0, forwardingHint.size ()) == forwardingHint)
+      m_localUserName.getSubName (0, forwardingHint.size ()) == forwardingHint)
     {
       effectiveForwardingHint = ndn::Name ("/"); // "directly" accesible
     }
@@ -322,7 +321,7 @@ Dispatcher::Did_SyncLog_StateChange_Execute (SyncStateMsgPtr stateMsg)
     {
       uint64_t oldSeq = state.old_seq();
       uint64_t newSeq = state.seq();
-      ndn::Name userName (reinterpret_cast<const unsigned char *> (state.name ().c_str ()));
+      ndn::Name userName (state.name ());
 
       // fetch actions with oldSeq + 1 to newSeq (inclusive)
       ndn::Name actionNameBase = ndn::Name("/");
@@ -336,7 +335,7 @@ Dispatcher::Did_SyncLog_StateChange_Execute (SyncStateMsgPtr stateMsg)
 
 
 void
-Dispatcher::Did_FetchManager_ActionFetch (const ndn::Name &deviceName, const ndn::Name &actionBaseName, uint32_t seqno, shared_ptr<ndn::Data> actionPco)
+Dispatcher::Did_FetchManager_ActionFetch (const ndn::Name &deviceName, const ndn::Name &actionBaseName, uint32_t seqno, boost::shared_ptr<ndn::Data> actionPco)
 {
   /// @todo Errors and exception checking
   _LOG_DEBUG ("Received action deviceName: " << deviceName << ", actionBaseName: " << actionBaseName << ", seqno: " << seqno);
@@ -369,7 +368,7 @@ Dispatcher::Did_FetchManager_ActionFetch (const ndn::Name &deviceName, const ndn
           if (m_objectDbMap.find (hash) == m_objectDbMap.end ())
             {
               _LOG_DEBUG ("create ObjectDb for " << hash);
-              m_objectDbMap [hash] = make_shared<ObjectDb> (m_rootDir / ".chronoshare", hashStr);
+              m_objectDbMap [hash] = boost::make_shared<ObjectDb> (m_rootDir / ".chronoshare", hashStr);
             }
 
           m_fileFetcher->Enqueue (deviceName, fileNameBase,
@@ -422,17 +421,17 @@ Dispatcher::Did_ActionLog_ActionApply_Delete_Execute (std::string filename)
 }
 
 void
-Dispatcher::Did_FetchManager_FileSegmentFetch (const ndn::Name &deviceName, const ndn::Name &fileSegmentBaseName, uint32_t segment, shared_ptr<ndn::Data> fileSegmentPco)
+Dispatcher::Did_FetchManager_FileSegmentFetch (const ndn::Name &deviceName, const ndn::Name &fileSegmentBaseName, uint32_t segment, boost::shared_ptr<ndn::Data> fileSegmentPco)
 {
   m_executor.execute (bind (&Dispatcher::Did_FetchManager_FileSegmentFetch_Execute, this, deviceName, fileSegmentBaseName, segment, fileSegmentPco));
 }
 
 void
-Dispatcher::Did_FetchManager_FileSegmentFetch_Execute (ndn::Name deviceName, ndn::Name fileSegmentBaseName, uint32_t segment, shared_ptr<ndn::Data> fileSegmentPco)
+Dispatcher::Did_FetchManager_FileSegmentFetch_Execute (ndn::Name deviceName, ndn::Name fileSegmentBaseName, uint32_t segment, boost::shared_ptr<ndn::Data> fileSegmentPco)
 {
   // fileSegmentBaseName:  /<device_name>/<appname>/file/<hash>
 
-  ndn::Component comp = fileSegmentBaseName.get (-1);
+  ndn::name::Component comp = fileSegmentBaseName.get (-1);
   const ndn::Buffer &hashBytes = ndn::Buffer(comp.value (), comp.size ());
   Hash hash (hashBytes.buf (), hashBytes.size ());
 
@@ -443,7 +442,7 @@ Dispatcher::Did_FetchManager_FileSegmentFetch_Execute (ndn::Name deviceName, ndn
   map<Hash, ObjectDbPtr>::iterator db = m_objectDbMap.find (hash);
   if (db != m_objectDbMap.end())
   {
-    db->second->saveContentObject(deviceName, segment, fileSegmentPco->buf ());
+    db->second->saveContentObject(deviceName, segment, fileSegmentPco->getContent ());
   }
   else
   {
@@ -468,7 +467,7 @@ Dispatcher::Did_FetchManager_FileFetchComplete_Execute (ndn::Name deviceName, nd
   _LOG_DEBUG ("Finished fetching " << deviceName << ", fileBaseName: " << fileBaseName);
 
 
-  ndn::Component comp = fileBaseName.get (-1);
+  ndn::name::Component comp = fileBaseName.get (-1);
   const ndn::Buffer &hashBytes = ndn::Buffer(comp.value (), comp.size ());
   Hash hash (hashBytes.buf (), hashBytes.size ());
 

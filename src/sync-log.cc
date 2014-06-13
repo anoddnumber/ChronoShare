@@ -109,9 +109,9 @@ SyncLog::SyncLog (const boost::filesystem::path &path, const ndn::Name &localNam
   sqlite3_stmt *stmt;
   int res = sqlite3_prepare_v2 (m_db, "SELECT device_id, seq_no FROM SyncNodes WHERE device_name=?", -1, &stmt, 0);
 
-  ndn::BufferPtr name = m_localName;
+  ndn::Block name = m_localName.wireEncode ();
 
-  sqlite3_bind_blob (stmt, 1, name->buf (), name->size (), SQLITE_STATIC);
+  sqlite3_bind_blob (stmt, 1, name.wire (), name.size (), SQLITE_STATIC);
 
   if (sqlite3_step (stmt) == SQLITE_ROW)
     {
@@ -205,7 +205,7 @@ SELECT state_hash FROM SyncLog WHERE state_id = ?\
   int stepRes = sqlite3_step (getHashStmt);
   if (stepRes == SQLITE_ROW)
     {
-      retval = make_shared<Hash> (sqlite3_column_blob (getHashStmt, 0),
+      retval = boost::make_shared<Hash> (sqlite3_column_blob (getHashStmt, 0),
                                   sqlite3_column_bytes (getHashStmt, 0));
     }
   else
@@ -275,9 +275,9 @@ SyncLog::UpdateDeviceSeqNo (const ndn::Name &name, sqlite3_int64 seqNo)
   int res = sqlite3_prepare (m_db, "INSERT INTO SyncNodes (device_name, seq_no) VALUES (?,?);",
                              -1, &stmt, 0);
 
-  ndn::BufferPtr nameBuf = name;
+  ndn::Block nameBuf = name.wireEncode ();
 
-  res += sqlite3_bind_blob  (stmt, 1, nameBuf->buf (), nameBuf->size (), SQLITE_STATIC);
+  res += sqlite3_bind_blob  (stmt, 1, nameBuf.wire (), nameBuf.size (), SQLITE_STATIC);
   res += sqlite3_bind_int64 (stmt, 2, seqNo);
   sqlite3_step (stmt);
 
@@ -323,15 +323,15 @@ SyncLog::LookupLocator (const ndn::Name &deviceName)
 {
   sqlite3_stmt *stmt;
   sqlite3_prepare_v2 (m_db, "SELECT last_known_locator FROM SyncNodes WHERE device_name=?;", -1, &stmt, 0);
-  ndn::BufferPtr nameBuf = deviceName;
-  sqlite3_bind_blob (stmt, 1, nameBuf->buf(), nameBuf->size(), SQLITE_STATIC);
+  ndn::Block nameBuf = deviceName.wireEncode ();
+  sqlite3_bind_blob (stmt, 1, nameBuf.wire (), nameBuf.size (), SQLITE_STATIC);
   int res = sqlite3_step (stmt);
   Name locator;
   switch (res)
   {
   case SQLITE_ROW:
     {
-      locator = Name((const unsigned char *)sqlite3_column_blob(stmt, 0), sqlite3_column_bytes(stmt, 0));
+      locator = ndn::Name((const char *)sqlite3_column_blob(stmt, 0));
     }
   case SQLITE_DONE: break;
   default:
@@ -350,14 +350,16 @@ SyncLog::LookupLocalLocator ()
 }
 
 void
-SyncLog::UpdateLocator(const ndn::Name &deviceName, const Name &locator)
+SyncLog::UpdateLocator(const ndn::Name &deviceName, const ndn::Name &locator)
 {
   sqlite3_stmt *stmt;
   sqlite3_prepare_v2 (m_db, "UPDATE SyncNodes SET last_known_locator=?,last_update=datetime('now') WHERE device_name=?;", -1, &stmt, 0);
-  ndn::BufferPtr nameBuf = deviceName;
-  ndn::BufferPtr locatorBuf = locator;
-  sqlite3_bind_blob (stmt, 1, locatorBuf->buf(), locatorBuf->size(), SQLITE_STATIC);
-  sqlite3_bind_blob (stmt, 2, nameBuf->buf(), nameBuf->length(),       SQLITE_STATIC);
+
+  ndn::Block nameBuf = deviceName.wireEncode ();
+  ndn::Block locatorBuf = locator.wireEncode ();
+
+  sqlite3_bind_blob (stmt, 1, locatorBuf.value (), locatorBuf.size (), SQLITE_STATIC);
+  sqlite3_bind_blob (stmt, 2, nameBuf.value (), nameBuf.size (),       SQLITE_STATIC);
   int res = sqlite3_step (stmt);
 
   if (res != SQLITE_OK && res != SQLITE_DONE)
@@ -433,7 +435,7 @@ SELECT sn.device_name, sn.last_known_locator, s_old.seq_no, s_new.seq_no\
   res += sqlite3_bind_blob  (stmt, 1, oldHash.GetHash (), oldHash.GetHashBytes (), SQLITE_STATIC);
   res += sqlite3_bind_blob  (stmt, 2, newHash.GetHash (), newHash.GetHashBytes (), SQLITE_STATIC);
 
-  SyncStateMsgPtr msg = make_shared<SyncStateMsg> ();
+  SyncStateMsgPtr msg = boost::make_shared<SyncStateMsg> ();
 
   // sqlite3_trace(m_db, xTrace, NULL);
 
@@ -496,8 +498,8 @@ SyncLog::SeqNo(const ndn::Name &name)
   sqlite3_stmt *stmt;
   sqlite3_int64 seq = -1;
   sqlite3_prepare_v2 (m_db, "SELECT seq_no FROM SyncNodes WHERE device_name=?;", -1, &stmt, 0);
-  ndn::BufferPtr nameBuf = name;
-  sqlite3_bind_blob (stmt, 1, nameBuf->buf (), nameBuf->size (), SQLITE_STATIC);
+  ndn::Block nameBuf = name.wireEncode ();
+  sqlite3_bind_blob (stmt, 1, nameBuf.value (), nameBuf.size (), SQLITE_STATIC);
   if (sqlite3_step (stmt) == SQLITE_ROW)
   {
     seq = sqlite3_column_int64 (stmt, 0);

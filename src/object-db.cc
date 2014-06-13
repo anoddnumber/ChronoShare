@@ -46,7 +46,7 @@ CREATE INDEX device ON File(device_name);                               \n\
 ";
 
 ObjectDb::ObjectDb (const fs::path &folder, const std::string &hash)
-  : m_lastUsed (time(NULL))
+  : m_lastUsed (std::time(NULL))
 {
   fs::path actualFolder = folder / "objects" / hash.substr (0, 2);
   fs::create_directories (actualFolder);
@@ -129,7 +129,7 @@ ObjectDb::~ObjectDb ()
 }
 
 void
-ObjectDb::saveContentObject (const ndn::Name &deviceName, sqlite3_int64 segment, const ndn::Buffer &data)
+ObjectDb::saveContentObject (const ndn::Name &deviceName, sqlite3_int64 segment, const ndn::Block &data)
 {
   sqlite3_stmt *stmt;
   sqlite3_prepare_v2 (m_db, "INSERT INTO File "
@@ -140,16 +140,16 @@ ObjectDb::saveContentObject (const ndn::Name &deviceName, sqlite3_int64 segment,
 
   ndn::Block buf = deviceName.wireEncode ();
 
-  sqlite3_bind_blob (stmt, 1, buf.wire (), buf->size (), SQLITE_STATIC);
+  sqlite3_bind_blob (stmt, 1, buf.wire (), buf.size (), SQLITE_STATIC);
   sqlite3_bind_int64 (stmt, 2, segment);
-  sqlite3_bind_blob (stmt, 3, data->buf (), data.size (), SQLITE_STATIC);
+  sqlite3_bind_blob (stmt, 3, data.value (), data.size (), SQLITE_STATIC);
 
   sqlite3_step (stmt);
   //_LOG_DEBUG ("After saving object: " << sqlite3_errmsg (m_db));
   sqlite3_finalize (stmt);
 
   // update last used time
-  m_lastUsed = time(NULL);
+  m_lastUsed = std::time(NULL);
 }
 
 ndn::BufferPtr
@@ -171,14 +171,14 @@ ObjectDb::fetchSegment (const ndn::Name &deviceName, sqlite3_int64 segment)
       const unsigned char *buf = reinterpret_cast<const unsigned char*> (sqlite3_column_blob (stmt, 0));
       int bufBytes = sqlite3_column_bytes (stmt, 0);
 
-      ret = make_shared<ndn::Buffer> (buf->buf (), buf->+bufBytes); //TODO incorrect?
+      ret = boost::make_shared<ndn::Buffer> (buf, buf+bufBytes);
 
     }
 
   sqlite3_finalize (stmt);
 
   // update last used time
-  m_lastUsed = time(NULL);
+  m_lastUsed = std::time(NULL);
 
   return ret;
 }
@@ -186,7 +186,7 @@ ObjectDb::fetchSegment (const ndn::Name &deviceName, sqlite3_int64 segment)
 time_t
 ObjectDb::secondsSinceLastUse()
 {
-  return (time(NULL) - m_lastUsed);
+  return (std::time(NULL) - m_lastUsed);
 }
 
 // sqlite3_int64

@@ -29,6 +29,7 @@
 #include "file-item.pb.h"
 
 #include <boost/tuple/tuple.hpp>
+#include <ndn-cxx/face.hpp>
 
 class ActionLog;
 typedef boost::shared_ptr<ActionLog> ActionLogPtr;
@@ -43,7 +44,7 @@ public:
   typedef boost::function<void (std::string /*filename*/)> OnFileRemovedCallback;
 
 public:
-  ActionLog (ndn::Face face, const boost::filesystem::path &path,
+  ActionLog (boost::shared_ptr<ndn::Face> face, const boost::filesystem::path &path,
              SyncLogPtr syncLog,
              const std::string &sharedFolder, const std::string &appName,
              OnFileAddedOrChangedCallback onFileAddedOrChanged, OnFileRemovedCallback onFileRemoved);
@@ -71,7 +72,7 @@ public:
   //////////////////////////
 
   ActionItemPtr
-  AddRemoteAction (const ndn::Name &deviceName, sqlite3_int64 seqno, shared_ptr<ndn::Data> actionPco);
+  AddRemoteAction (const ndn::Name &deviceName, sqlite3_int64 seqno, boost::shared_ptr<ndn::Data> actionPco);
 
   /**
    * @brief Add remote action using just action's parsed content object
@@ -79,16 +80,16 @@ public:
    * This function extracts device name and sequence number from the content object's and calls the overloaded method
    */
   ActionItemPtr
-  AddRemoteAction (shared_ptr<ndn::Data> actionPco);
+  AddRemoteAction (boost::shared_ptr<ndn::Data> actionPco);
 
   ///////////////////////////
   // General operations    //
   ///////////////////////////
 
-  shared_ptr<ndn::Data>
-  LookupActionData (const ndn::Name &deviceName, sqlite3_int64 seqno);
+  boost::shared_ptr<ndn::Data>
+  LookupActionPco (const ndn::Name &deviceName, sqlite3_int64 seqno);
 
-  shared_ptr<ndn::Data>
+  boost::shared_ptr<ndn::Data>
   LookupActionPco (const ndn::Name &actionName);
 
   ActionItemPtr
@@ -127,6 +128,9 @@ private:
   boost::tuple<sqlite3_int64 /*version*/, ndn::BufferPtr /*device name*/, sqlite3_int64 /*seq_no*/>
   GetLatestActionForFile (const std::string &filename);
 
+  boost::shared_ptr<ActionItem>
+  deserialize (const ndn::Block &content);
+
   static void
   apply_action_xFun (sqlite3_context *context, int argc, sqlite3_value **argv);
 
@@ -134,7 +138,7 @@ private:
   SyncLogPtr m_syncLog;
   FileStatePtr m_fileState;
 
-  Ndn::Face m_ndn;
+  boost::shared_ptr<ndn::Face> m_ndn;
   std::string m_sharedFolderName;
   std::string m_appName;
 

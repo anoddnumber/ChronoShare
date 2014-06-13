@@ -27,6 +27,8 @@
 #include "periodic-task.h"
 #include "simple-interval-generator.h"
 #include <boost/lexical_cast.hpp>
+#include <boost/tuple/tuple.hpp>
+#include <ndn-cxx/face.hpp>
 
 INIT_LOGGER ("ContentServer");
 
@@ -36,12 +38,12 @@ using namespace boost;
 
 static const int DB_CACHE_LIFETIME = 60;
 
-ContentServer::ContentServer(ndn::Face face, ActionLogPtr actionLog,
+ContentServer::ContentServer(ActionLogPtr actionLog,
                              const boost::filesystem::path &rootDir,
                              const ndn::Name &userName, const std::string &sharedFolderName,
                              const std::string &appName,
                              int freshness)
-  : m_ndn(face)
+  : m_ndn()
   , m_actionLog(actionLog)
   , m_dbFolder(rootDir / ".chronoshare")
   , m_freshness(freshness)
@@ -60,12 +62,13 @@ ContentServer::~ContentServer()
   m_scheduler->shutdown ();
 
   ScopedLock lock (m_mutex);
-  for (PrefixIt forwardingHint = m_prefixes.begin(); forwardingHint != m_prefixes.end(); ++forwardingHint)
+/*  for (PrefixIt forwardingHint = m_prefixes.begin(); forwardingHint != m_prefixes.end(); ++forwardingHint)
   {
-    m_ndn.unsetInterestFilter(*forwardingHint);
+    m_ndn->unsetInterestFilter(&*forwardingHint);
   }
 
   m_prefixes.clear ();
+*/ //TODO fix
 }
 
 void
@@ -76,20 +79,37 @@ ContentServer::registerPrefix (const ndn::Name &forwardingHint)
 
   _LOG_DEBUG (">> content server: register " << forwardingHint);
 
-  RegisteredPrefixId id = m_ndn.setInterestFilter (forwardingHint, bind(&ContentServer::filterAndServe, this, forwardingHint, _1), bind(&ContentServer::doNothing, this));
+  const ndn::RegisteredPrefixId *id = m_ndn->setInterestFilter (ndn::InterestFilter(forwardingHint), bind(&ContentServer::filterAndServe, this, forwardingHint, _1), bind(&ContentServer::doNothing, this));
 
   ScopedLock lock (m_mutex);
-  m_prefixes.insert(id);
+  //m_prefixes.insert(tuple<ndn::Name, ndn::RegisteredPrefixId>(forwardingHint, id)); //TODO fix later...
 }
 
 void
-ContentServer::deregisterPrefix (const RegisteredPrefixId &forwardingHint)
+ContentServer::deregisterPrefix (const ndn::Name &forwardingHint)
+{
+/*  _LOG_DEBUG ("<< content server: deregister " << forwardingHint);
+
+  for (std::set<boost::tuple<ndn::Name, ndn::RegisteredPrefixId> >::iterator i = m_prefixes.begin(); i != m_prefixes.end(); i++)
+  {
+     if (boost::get<0>(*i) == forwardingHint) { //TODO
+       ndn::RegisteredPrefixId id = boost::get<1>(*i);
+       deregisterPrefix (id);
+       m_prefixes.erase (i);
+       return;
+     }
+  }
+*/
+}
+
+void
+ContentServer::deregisterPrefix (const ndn::RegisteredPrefixId &forwardingHint)
 {
   _LOG_DEBUG ("<< content server: deregister " << forwardingHint);
-  m_ndn.unsetInterestFilter(forwardingHint);
+  m_ndn->unsetInterestFilter(&forwardingHint);
 
   ScopedLock lock (m_mutex);
-  m_prefixes.erase (forwardingHint);
+  //m_prefixes.erase (forwardingHint);//erased in other deregisterPrefix, TODO delete this line later
 }
 
 
@@ -102,30 +122,22 @@ ContentServer::filterAndServeImpl (const ndn::Name &forwardingHint, const ndn::N
   // name for files:   /<device_name>/<appname>/file/<hash>/<segment>
   // name for actions: /<device_name>/<appname>/action/<shared-folder>/<action-seq>
 
-  try
-    {
-      if (name.size() >= 4 && name.get (-4).toUri () == m_appName)
+  if (name.size() >= 4 && name.get (-4).toUri () == m_appName)
+  {
+     string type = name.get (-3).toUri ();
+     if (type == "file")
+     {
+        serve_File (forwardingHint, name, interest);
+     }
+     else if (type == "action")
+     {
+        string folder = name.get (-2).toUri ();
+        if (folder == m_sharedFolderName)
         {
-          string type = name.get (-3).toUri ();
-          if (type == "file")
-            {
-              serve_File (forwardingHint, name, interest);
-            }
-          else if (type == "action")
-            {
-              string folder = name.get (-2).toUri ();
-              if (folder == m_sharedFolderName)
-              {
-                serve_Action (forwardingHint, name, interest);
-              }
-            }
+           serve_Action (forwardingHint, name, interest);
         }
-    }
-  catch (Ccnx::NameException &ne) //TODO Ccnx::NameException
-    {
-      // ignore any unexpected interests and errors
-      _LOG_ERROR(boost::get_error_info<Ccnx::error_info_str>(ne));
-    }
+     }
+  }
 }
 
 void
@@ -137,22 +149,14 @@ ContentServer::doNothing ()
 void
 ContentServer::filterAndServe (ndn::Name forwardingHint, const ndn::Name &interest)
 {
-  try
-    {
-      if (forwardingHint.size () > 0 &&
-          m_userName.size () >= forwardingHint.size () &&
-          m_userName.getSubName (0, forwardingHint.size ()) == forwardingHint)
-        {
-          filterAndServeImpl (Name ("/"), interest, interest); // try without forwarding hints
-        }
+   if (forwardingHint.size () > 0 &&
+       m_userName.size () >= forwardingHint.size () &&
+       m_userName.getSubName (0, forwardingHint.size ()) == forwardingHint)
+   {
+      filterAndServeImpl (Name ("/"), interest, interest); // try without forwarding hints
+   }
 
       filterAndServeImpl (forwardingHint, interest.getSubName (forwardingHint.size()), interest); // always try with hint... :( have to
-    }
-  catch (Ccnx::NameException &ne)
-    {
-      // ignore any unexpected interests and errors
-      _LOG_ERROR(boost::get_error_info<Ccnx::error_info_str>(ne));
-    }
 }
 
 void
@@ -179,9 +183,9 @@ ContentServer::serve_File_Execute (const ndn::Name &forwardingHint, const ndn::N
   // interest:       /<forwarding-hint>/<device_name>/<appname>/file/<hash>/<segment>
   // name:           /<device_name>/<appname>/file/<hash>/<segment>
 
-  int64_t segment = name.get (-1).toInteger ();
+  int64_t segment = name.get (-1).toNumber ();
   ndn::Name deviceName = name.getSubName (0, name.size () - 4);
-  Hash hash (head(name.get (-2)), name.get (-2).size ());
+  Hash hash (reinterpret_cast<const void*>(name.get (-2).wireEncode ().value ()), name.get (-2).size ());
 
   _LOG_DEBUG (" server FILE for device: " << deviceName << ", file_hash: " << hash.shortHash () << " segment: " << segment);
 
@@ -212,7 +216,7 @@ ContentServer::serve_File_Execute (const ndn::Name &forwardingHint, const ndn::N
 
   if (db)
   {
-	ndn::Buffer co = db->fetchSegment (deviceName, segment);
+	ndn::BufferPtr co = db->fetchSegment (deviceName, segment);
     if (co)
       {
         if (forwardingHint.size () == 0)
@@ -220,7 +224,7 @@ ContentServer::serve_File_Execute (const ndn::Name &forwardingHint, const ndn::N
             _LOG_DEBUG (ParsedContentObject (*co).name ());
             ndn::Data data;
             data.setContent(co->buf (), co->size ());
-            m_ndn.put(data);
+            m_ndn->put(data);
           }
         else
           {
@@ -228,9 +232,9 @@ ContentServer::serve_File_Execute (const ndn::Name &forwardingHint, const ndn::N
               {
                 ndn::Data data;
                 data.setName(interest);
-                data.setFreshnessPeriod(m_freshness);
+                data.setFreshnessPeriod(time::seconds(m_freshness));
                 data.setContent(co->buf (), co->size ());
-                m_ndn.put(data);
+                m_ndn->put(data);
               }
             else
               {
@@ -257,31 +261,30 @@ ContentServer::serve_Action_Execute (const ndn::Name &forwardingHint, const ndn:
   // interest:       /<forwarding-hint>/<device_name>/<appname>/action/<shared-folder>/<action-seq>
   // name for actions: /<device_name>/<appname>/action/<shared-folder>/<action-seq>
 
-  int64_t seqno = name.get (-1).toInteger ();
-  ndn::Name deviceName = name.getSubName (0, name.size (0 - 4));
+  int64_t seqno = name.get (-1).toNumber ();
+  ndn::Name deviceName = name.getSubName (0, name.size () - 4);
 
   _LOG_DEBUG (" server ACTION for device: " << deviceName << " and seqno: " << seqno);
 //DATA
-  shared_ptr<Data> dataObject = m_actionLog->LookupActionData (deviceName, seqno);
+  boost::shared_ptr<ndn::Data> dataObject = m_actionLog->LookupActionPco (deviceName, seqno);
   if (dataObject)
     {
       if (forwardingHint.size () == 0)
         {
-          m_ndn.put (dataObject);
+          m_ndn->put (*dataObject);
         }
       else
         {
           const Block &block = dataObject->getContent ();
-          const ndn::Buffer &content = block->value_begin (); //TODO: ...is this correct...?
 
           ndn::Data data;
           data.setName(interest);
           if (m_freshness > 0)
           {
-        	  data.setFreshnessPeriod(m_freshness);
+        	  data.setFreshnessPeriod(time::seconds(m_freshness));
           }
-          data.setContent(content.buf (), content.size());
-          m_ndn.put(data);
+          data.setContent(block.value (), block.value_size ());
+          m_ndn->put(data);
         }
     }
   else
